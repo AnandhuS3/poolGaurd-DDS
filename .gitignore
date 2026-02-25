@@ -59,19 +59,19 @@ database/*.sql
 !database/schema.sql
 
 # Uploads and temporary files
-uploads/*
-!uploads/.gitkeep
-output/*
-!output/.gitkeep
+assets/uploads/*
+!assets/uploads/.gitkeep
+assets/output/*
+!assets/output/.gitkeep
 temp/
 tmp/
 
 # Model weights and datasets
-weights/*.pt
-weights/*.pth
-weights/*.onnx
-weights/*.weights
-!weights/.gitkeep
+assets/weights/*.pt
+assets/weights/*.pth
+assets/weights/*.onnx
+assets/weights/*.weights
+!assets/weights/.gitkeep
 models/*.pt
 models/*.pth
 models/*.onnx

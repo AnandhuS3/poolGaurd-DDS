@@ -5,7 +5,7 @@ This file imports and runs the FastAPI application from the core module
 import sys
 from pathlib import Path
 
-# Add project root to Python path
+# Add backend/ directory to Python path so package imports (core, config, etc.) resolve
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 

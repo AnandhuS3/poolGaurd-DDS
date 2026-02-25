@@ -8,22 +8,27 @@ from pathlib import Path
 # ============================================================================
 # BASE PATHS
 # ============================================================================
-# Project root directory (parent of core/ directory where this file is located)
-PROJECT_ROOT = Path(__file__).parent.parent.resolve()
+# Project root directory (three levels up: paths.py -> core/ -> backend/ -> project root)
+PROJECT_ROOT = Path(__file__).parent.parent.parent.resolve()
+
+# ============================================================================
+# ASSETS BASE
+# ============================================================================
+ASSETS_DIR = PROJECT_ROOT / "assets"
 
 # ============================================================================
 # MODEL PATHS
 # ============================================================================
-WEIGHTS_DIR = PROJECT_ROOT / "weights"
+WEIGHTS_DIR = ASSETS_DIR / "weights"
 MODEL_PRIMARY = WEIGHTS_DIR / "best.pt"
 MODEL_SECONDARY = WEIGHTS_DIR / "best1.pt"
 
 # ============================================================================
 # DATA DIRECTORIES
 # ============================================================================
-UPLOADS_DIR = PROJECT_ROOT / "uploads"
-OUTPUT_DIR = PROJECT_ROOT / "output"
-SOUNDS_DIR = PROJECT_ROOT / "sounds"
+UPLOADS_DIR = ASSETS_DIR / "uploads"
+OUTPUT_DIR = ASSETS_DIR / "output"
+SOUNDS_DIR = ASSETS_DIR / "sounds"
 
 # ============================================================================
 # FRONTEND PATHS

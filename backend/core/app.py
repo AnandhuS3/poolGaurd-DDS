@@ -26,7 +26,7 @@ from core.auth import (
 )
 from core.notifications import initialize_database, NotificationService
 from core import config as app_config
-from core.paths import UPLOADS_DIR, OUTPUT_DIR, get_schema_path_str, ensure_directories, FRONTEND_DIR
+from core.paths import UPLOADS_DIR, OUTPUT_DIR, SOUNDS_DIR, get_schema_path_str, ensure_directories, FRONTEND_DIR
 
 # Import config
 try:
@@ -691,10 +691,10 @@ async def admin_redirect():
     return RedirectResponse(url="/admin.html", status_code=302)
 
 # Mount uploads folder to serve videos
-app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
 
 # Mount sounds folder to serve alarm audio
-app.mount("/sounds", StaticFiles(directory="sounds"), name="sounds")
+app.mount("/sounds", StaticFiles(directory=str(SOUNDS_DIR)), name="sounds")
 
 # Mount frontend folder to serve HTML - MUST BE LAST
 # Note: This serves index.html and other static HTML files from frontend/
