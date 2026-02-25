@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Admin Panel • User Management</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
+        rel="stylesheet" />
+    <style>
+        :root {
+            --primary: #4361ee;
+            --primary-dark: #3f37c9;
+            --danger: #e63946;
+            --success: #2dc653;
+            --warning: #fb8500;
+            --text: #1d3557;
+            --text-light: #64748b;
+            --border: #e0e4ed;
+            --shadow: 0 6px 24px rgba(0, 0, 0, 0.11);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: "Inter", system-ui, sans-serif;
+            background: #f8f9fc;
+            color: var(--text);
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        header {
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem 2rem;
+            margin-bottom: 2rem;
+            box-shadow: var(--shadow);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        h1 {
+            font-size: 1.8rem;
+            color: var(--text);
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .role-badge {
+            padding: 0.4rem 0.9rem;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            background: #fee;
+            color: var(--danger);
+        }
+
+        .btn {
+            padding: 0.7rem 1.3rem;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            font-family: inherit;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-dark);
+        }
+
+        .btn-danger {
+            background: var(--danger);
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #c62e3a;
+        }
+
+        .btn-secondary {
+            background: #f1f3f5;
+            color: var(--text);
+        }
+
+        .actions {
+            display: flex;
+            gap: 1rem;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 2rem;
+            box-shadow: var(--shadow);
+            margin-bottom: 2rem;
+        }
+
+        .card h2 {
+            font-size: 1.4rem;
+            margin-bottom: 1.5rem;
+            color: var(--text);
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1.2rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        label {
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            font-size: 0.9rem;
+        }
+
+        input,
+        select {
+            padding: 0.75rem 1rem;
+            border: 1.5px solid var(--border);
+            border-radius: 8px;
+            font-family: inherit;
+            font-size: 0.95rem;
+        }
+
+        input:focus,
+        select:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th {
+            text-align: left;
+            padding: 1rem;
+            background: #f8f9fc;
+            font-weight: 600;
+            border-bottom: 2px solid var(--border);
+        }
+
+        td {
+            padding: 1rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        tr:hover {
+            background: #f8f9fc;
+        }
+
+        .status-badge {
+            padding: 0.3rem 0.8rem;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+
+        .status-active {
+            background: #e6f9ee;
+            color: var(--success);
+        }
+
+        .status-inactive {
+            background: #fee;
+            color: var(--danger);
+        }
+
+        .table-actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .btn-sm {
+            padding: 0.4rem 0.8rem;
+            font-size: 0.85rem;
+        }
+
+        .alert {
+            padding: 1rem 1.2rem;
+            border-radius: 8px;
+            margin-bottom: 1.5rem;
+            display: none;
+        }
+
+        .alert.show {
+            display: block;
+            animation: slideIn 0.3s ease;
+        }
+
+        .alert-success {
+            background: #e6f9ee;
+            color: var(--success);
+            border: 1px solid #b3eac8;
+        }
+
+        .alert-error {
+            background: #fee;
+            color: var(--danger);
+            border: 1px solid #fcc;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .spinner {
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            width: 16px;
+            height: 16px;
+            animation: spin 0.6s linear infinite;
+            display: inline-block;
+            margin-left: 0.5rem;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1>🛡️ Admin Panel</h1>
+            <div class="user-info">
+                <span id="userName">Admin</span>
+                <span class="role-badge">ADMIN</span>
+                <div class="actions">
+                    <button class="btn btn-secondary" onclick="goToMonitoring()">Monitoring</button>
+                    <button class="btn btn-danger" onclick="logout()">Logout</button>
+                </div>
+            </div>
+        </header>
+
+        <div id="alertBox" class="alert"></div>
+
+        <!-- Create User Form -->
+        <div class="card">
+            <h2>Create New User</h2>
+            <form id="createUserForm">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="name">Full Name</label>
+                        <input type="text" id="name" name="name" required />
+                    </div>
+                    <div class="form-group">
+                        <label for="email">Email</label>
+                        <input type="email" id="email" name="email" required />
+                    </div>
+                    <div class="form-group">
+                        <label for="phone">Phone Number</label>
+                        <input type="tel" id="phone" name="phone" placeholder="+1234567890" required />
+                    </div>
+                    <div class="form-group">
+                        <label for="role">Role</label>
+                        <select id="role" name="role" required>
+                            <option value="guard">Guard</option>
+                            <option value="admin">Admin</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="password">Password</label>
+                        <input type="password" id="password" name="password" minlength="8" required />
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary">Create User</button>
+            </form>
+        </div>
+
+        <!-- System Owner Section -->
+        <div class="card">
+            <h2>🔐 System Owner</h2>
+            <div style="display: grid; grid-template-columns: 1fr auto; gap: 2rem; align-items: start;">
+                <div id="systemAdminInfo" style="padding: 1rem; background: #f8f9fc; border-radius: 8px;">
+                    <p style="color: var(--text-light);">Loading system administrator...</p>
+                </div>
+                <div style="min-width: 300px;">
+                    <h3 style="font-size: 1.1rem; margin-bottom: 1rem;">Change Password</h3>
+                    <form id="changePasswordForm">
+                        <div class="form-group" style="margin-bottom: 1rem;">
+                            <label for="currentPassword">Current Password</label>
+                            <input type="password" id="currentPassword" name="currentPassword" required />
+                        </div>
+                        <div class="form-group" style="margin-bottom: 1rem;">
+                            <label for="newPassword">New Password</label>
+                            <input type="password" id="newPassword" name="newPassword" minlength="8" required />
+                        </div>
+                        <div class="form-group" style="margin-bottom: 1rem;">
+                            <label for="confirmPassword">Confirm New Password</label>
+                            <input type="password" id="confirmPassword" name="confirmPassword" minlength="8" required />
+                        </div>
+                        <button type="submit" class="btn btn-primary">Update Password</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Users List -->
+        <div class="card">
+            <h2>User Management</h2>
+            <table id="usersTable">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th>Phone</th>
+                        <th>Role</th>
+                        <th>Status</th>
+                        <th>Created</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="usersTableBody">
+                    <tr>
+                        <td colspan="7" style="text-align: center; padding: 2rem;">Loading users...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Active Sessions -->
+        <div class="card">
+            <h2>Active Sessions</h2>
+            <table id="sessionsTable">
+                <thead>
+                    <tr>
+                        <th>User</th>
+                        <th>Role</th>
+                        <th>Login Time</th>
+                        <th>IP Address</th>
+                    </tr>
+                </thead>
+                <tbody id="sessionsTableBody">
+                    <tr>
+                        <td colspan="4" style="text-align: center; padding: 2rem;">Loading sessions...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin;
+        let authToken = '';
+        let currentUser = null;
+
+        // Initialize
+        window.addEventListener('DOMContentLoaded', () => {
+            authToken = localStorage.getItem('auth_token');
+            const userInfo = localStorage.getItem('user_info');
+
+            if (!authToken || !userInfo) {
+                window.location.href = '/login';
+                return;
+            }
+
+            currentUser = JSON.parse(userInfo);
+
+            // Check if user is admin
+            if (currentUser.role !== 'admin') {
+                window.location.href = '/';
+                return;
+            }
+
+            document.getElementById('userName').textContent = currentUser.name;
+
+            loadSystemAdmin();
+            loadUsers();
+            loadActiveSessions();
+
+            // Refresh active sessions every 5 seconds
+            setInterval(loadActiveSessions, 5000);
+        });
+
+        // Load system administrator
+        async function loadSystemAdmin() {
+            try {
+                const response = await fetch(`${API_BASE}/api/admin/system-admin`, {
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`
+                    }
+                });
+
+                const sysAdmin = await response.json();
+
+                const infoDiv = document.getElementById('systemAdminInfo');
+                infoDiv.innerHTML = `
+                    <div style="display: grid; grid-template-columns: auto 1fr; gap: 1rem 2rem;">
+                        <strong>Name:</strong> <span>${sysAdmin.name}</span>
+                        <strong>Email:</strong> <span>${sysAdmin.email}</span>
+                        <strong>Phone:</strong> <span>${sysAdmin.phone_number}</span>
+                        <strong>Status:</strong> <span class="status-badge status-${sysAdmin.is_active ? 'active' : 'inactive'}">
+                            ${sysAdmin.is_active ? 'Active' : 'Inactive'}
+                        </span>
+                        <strong>Created:</strong> <span>${new Date(sysAdmin.created_at).toLocaleString()}</span>
+                    </div>
+                    <p style="margin-top: 1rem; padding: 0.8rem; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px; font-size: 0.9rem;">
+                        ⚠️ <strong>Protected Account:</strong> This account cannot be deleted or modified through the user management interface.
+                    </p>
+                `;
+            } catch (error) {
+                console.error('Failed to load system admin:', error);
+                document.getElementById('systemAdminInfo').innerHTML = `
+                    <p style="color: var(--danger);">Failed to load system administrator information</p>
+                `;
+            }
+        }
+
+        // Change system admin password
+        document.getElementById('changePasswordForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const formData = new FormData(e.target);
+            const currentPassword = formData.get('currentPassword');
+            const newPassword = formData.get('newPassword');
+            const confirmPassword = formData.get('confirmPassword');
+
+            // Validate passwords match
+            if (newPassword !== confirmPassword) {
+                showAlert('New passwords do not match', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/api/admin/system-admin/password`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify({
+                        current_password: currentPassword,
+                        new_password: newPassword
+                    })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.detail || 'Failed to change password');
+                }
+
+                showAlert('Password changed successfully!', 'success');
+                e.target.reset();
+            } catch (error) {
+                showAlert(error.message, 'error');
+            }
+        });
+
+        // Create user
+        document.getElementById('createUserForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const formData = new FormData(e.target);
+            const userData = {
+                name: formData.get('name'),
+                email: formData.get('email'),
+                phone_number: formData.get('phone'),
+                password: formData.get('password'),
+                role: formData.get('role')
+            };
+
+            try {
+                const response = await fetch(`${API_BASE}/api/admin/users`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify(userData)
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.detail || 'Failed to create user');
+                }
+
+                showAlert('User created successfully!', 'success');
+                e.target.reset();
+                loadUsers();
+            } catch (error) {
+                showAlert(error.message, 'error');
+            }
+        });
+
+        // Load users
+        async function loadUsers() {
+            try {
+                const response = await fetch(`${API_BASE}/api/admin/users`, {
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`
+                    }
+                });
+
+                const users = await response.json();
+
+                const tbody = document.getElementById('usersTableBody');
+                tbody.innerHTML = users.map(user => `
+                    <tr>
+                        <td>${user.name}</td>
+                        <td>${user.email}</td>
+                        <td>${user.phone_number}</td>
+                        <td><span class="role-badge">${user.role.toUpperCase()}</span></td>
+                        <td>
+                            <span class="status-badge status-${user.is_active ? 'active' : 'inactive'}">
+                                ${user.is_active ? 'Active' : 'Inactive'}
+                            </span>
+                        </td>
+                        <td>${new Date(user.created_at).toLocaleDateString()}</td>
+                        <td class="table-actions">
+                            ${user.is_active ?
+                        `<button class="btn btn-danger btn-sm" onclick="deactivateUser(${user.id})">Deactivate</button>` :
+                        `<button class="btn btn-primary btn-sm" onclick="activateUser(${user.id})">Activate</button>`
+                    }
+                            <button class="btn btn-danger btn-sm" onclick="deleteUser(${user.id}, '${user.email}')">🗑️ Delete</button>
+                        </td>
+                    </tr>
+                `).join('');
+            } catch (error) {
+                console.error('Failed to load users:', error);
+            }
+        }
+
+        // Load active sessions
+        async function loadActiveSessions() {
+            try {
+                const response = await fetch(`${API_BASE}/api/admin/sessions`, {
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`
+                    }
+                });
+
+                const sessions = await response.json();
+
+                const tbody = document.getElementById('sessionsTableBody');
+                if (sessions.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="4" style="text-align: center;">No active sessions</td></tr>';
+                } else {
+                    tbody.innerHTML = sessions.map(session => `
+                        <tr>
+                            <td>${session.name}</td>
+                            <td><span class="role-badge">${session.role.toUpperCase()}</span></td>
+                            <td>${new Date(session.login_time).toLocaleString()}</td>
+                            <td>${session.ip_address || 'N/A'}</td>
+                        </tr>
+                    `).join('');
+                }
+            } catch (error) {
+                console.error('Failed to load sessions:', error);
+            }
+        }
+
+        // Deactivate user
+        async function deactivateUser(userId) {
+            if (!confirm('Are you sure you want to deactivate this user?')) return;
+
+            try {
+                const response = await fetch(`${API_BASE}/api/admin/users/${userId}`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify({ is_active: false })
+                });
+
+                if (!response.ok) throw new Error('Failed to deactivate user');
+
+                showAlert('User deactivated successfully', 'success');
+                loadUsers();
+            } catch (error) {
+                showAlert(error.message, 'error');
+            }
+        }
+
+        // Activate user
+        async function activateUser(userId) {
+            try {
+                const response = await fetch(`${API_BASE}/api/admin/users/${userId}`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify({ is_active: true })
+                });
+
+                if (!response.ok) throw new Error('Failed to activate user');
+
+                showAlert('User activated successfully', 'success');
+                loadUsers();
+            } catch (error) {
+                showAlert(error.message, 'error');
+            }
+        }
+
+        // Delete user
+        async function deleteUser(userId, userEmail) {
+            if (!confirm(`Are you sure you want to permanently delete user "${userEmail}"?\n\nThis action cannot be undone!`)) return;
+
+            try {
+                const response = await fetch(`${API_BASE}/api/admin/users/${userId}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`
+                    }
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.detail || 'Failed to delete user');
+                }
+
+                showAlert('User deleted successfully', 'success');
+                loadUsers();
+            } catch (error) {
+                showAlert(error.message, 'error');
+            }
+        }
+
+        function goToMonitoring() {
+            window.location.href = '/';
+        }
+
+        function logout() {
+            fetch(`${API_BASE}/api/auth/logout`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${authToken}`
+                }
+            }).finally(() => {
+                localStorage.removeItem('auth_token');
+                localStorage.removeItem('user_info');
+                window.location.href = '/login';
+            });
+        }
+
+        function showAlert(message, type) {
+            const alertBox = document.getElementById('alertBox');
+            alertBox.textContent = message;
+            alertBox.className = `alert alert-${type} show`;
+            setTimeout(() => {
+                alertBox.classList.remove('show');
+            }, 3000);
+        }
+    </script>
+</body>
+
+</html>

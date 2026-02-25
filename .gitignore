@@ -1,0 +1,138 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+.virtualenv/
+
+# PyCharm
+.idea/
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+dlogs/
+logs/
+*.log.*
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+database/*.sql
+!database/schema.sql
+
+# Uploads and temporary files
+uploads/*
+!uploads/.gitkeep
+output/*
+!output/.gitkeep
+temp/
+tmp/
+
+# Model weights and datasets
+weights/*.pt
+weights/*.pth
+weights/*.onnx
+weights/*.weights
+!weights/.gitkeep
+models/*.pt
+models/*.pth
+models/*.onnx
+!models/.gitkeep
+
+# Video files
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.flv
+*.wmv
+
+# Image files (if you want to ignore them)
+# *.jpg
+# *.jpeg
+# *.png
+# *.gif
+
+# OS specific
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# Windows
+$RECYCLE.BIN/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+.hypothesis/
+
+# Documentation builds
+doc/_build/
+docs/_build/
+
+# MyPy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# Credentials and sensitive data
+credentials.json
+secrets.json
+*.key
+*.pem
+*.crt
+
+# Project specific
+config/credentials.py
+core/credentials.py
