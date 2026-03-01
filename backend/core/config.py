@@ -21,10 +21,11 @@ from core.credentials import (
 # ============================================================================
 # BASE DIRECTORIES
 # ============================================================================
-# BASE_DIR is the project root (parent of core folder)
-BASE_DIR = Path(__file__).parent.parent
-UPLOAD_DIR = BASE_DIR / "uploads"
-MODEL_DIR = BASE_DIR / "weights"  # Models are in the weights folder
+# BASE_DIR is the project root (v5-poss/), three levels up from this file:
+#   config.py → core/ → backend/ → v5-poss/
+BASE_DIR = Path(__file__).parent.parent.parent
+UPLOAD_DIR = BASE_DIR / "assets" / "uploads"
+MODEL_DIR = BASE_DIR / "assets" / "weights"  # Models are in assets/weights/
 FRONTEND_DIR = BASE_DIR / "frontend"
 
 # ============================================================================

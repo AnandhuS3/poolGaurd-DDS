@@ -54,6 +54,15 @@ ws_logger = loggers['websocket']
 
 app = FastAPI(title="Drowning Detection System")
 
+@app.exception_handler(RuntimeError)
+async def runtime_error_handler(request: Request, exc: RuntimeError):
+    """Return 503 when the database pool is not available (e.g. MySQL down at startup)"""
+    logger.error(f"[SERVER] RuntimeError on {request.url.path}: {exc}")
+    return JSONResponse(
+        status_code=503,
+        content={"detail": str(exc)},
+    )
+
 def ensure_database_ready():
     """
     Automatically set up database on startup:
@@ -117,7 +126,7 @@ def ensure_database_ready():
             # Create default admin user
             password_hash = PasswordHasher.hash_password("admin123")
             insert_query = """
-                INSERT INTO users (username, email, password_hash, role, phone_number, created_at)
+                INSERT INTO users (name, email, password_hash, role, phone_number, created_at)
                 VALUES (%s, %s, %s, %s, %s, NOW())
             """
             cursor.execute(insert_query, ('admin', 'admin@dds.local', password_hash, 'admin', '+00 00000 00000'))

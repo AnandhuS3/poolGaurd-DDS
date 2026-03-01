@@ -22,12 +22,14 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash VARCHAR(255) NOT NULL,
     role ENUM('admin', 'guard') NOT NULL DEFAULT 'guard',
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    is_system_admin BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     
     INDEX idx_email (email),
     INDEX idx_role (role),
-    INDEX idx_is_active (is_active)
+    INDEX idx_is_active (is_active),
+    INDEX idx_system_admin (is_system_admin)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================================
@@ -114,13 +116,14 @@ CREATE TABLE IF NOT EXISTS system_config (
 
 -- Default admin user (password: admin123)
 -- Password hash generated using bcrypt with cost factor 12
-INSERT INTO users (name, email, phone_number, password_hash, role, is_active) 
+INSERT INTO users (name, email, phone_number, password_hash, role, is_active, is_system_admin) 
 VALUES (
     'System Administrator',
     'admin@dds.local',
     '+1234567890',
     '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5GyYqMvFj9nPu',  -- admin123
     'admin',
+    TRUE,
     TRUE
 ) ON DUPLICATE KEY UPDATE id=id;
 

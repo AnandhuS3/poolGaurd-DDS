@@ -66,6 +66,12 @@ class Database:
                 cursor.execute("SELECT * FROM users")
                 results = cursor.fetchall()
         """
+        if self._pool is None:
+            raise RuntimeError(
+                "Database connection pool is not initialized. "
+                "MySQL may have been unavailable when the server started. "
+                "Restart the server after ensuring MySQL is running."
+            )
         connection = None
         try:
             connection = self._pool.get_connection()
@@ -240,7 +246,7 @@ class User:
     @staticmethod
     def get_system_admin() -> Optional[Dict]:
         """Get the system administrator"""
-        query = "SELECT id, name, email, phone_number, role, is_active, created_at FROM users WHERE is_system_admin = TRUE LIMIT 1"
+        query = "SELECT id, name, email, phone_number, role, is_active, created_at, password_hash FROM users WHERE is_system_admin = TRUE LIMIT 1"
         results = db.execute_query(query)
         return results[0] if results else None
     
