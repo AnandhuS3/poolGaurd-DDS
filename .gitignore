@@ -153,3 +153,6 @@ secrets.json
 config/credentials.py
 core/credentials.py
 backend/core/credentials.py
+
+# Staging / scratch folders
+Both/
