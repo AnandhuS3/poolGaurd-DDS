@@ -22,6 +22,12 @@ const STATE_CONFIG = {
     icon: '🟡',
     label: 'WARNING',
   },
+  struggling: {
+    border: 'border-[#F97316]',
+    badge: 'bg-[#F97316]',
+    icon: '🟠',
+    label: 'STRUGGLING',
+  },
 } as const;
 
 function timeAgo(epochMs: number): string {

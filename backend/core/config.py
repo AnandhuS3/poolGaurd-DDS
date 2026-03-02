@@ -13,9 +13,8 @@ from pathlib import Path
 from core.credentials import (
     DB_USER, DB_PASSWORD,
     SMTP_USERNAME, SMTP_PASSWORD,
-    TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN,
-    TWILIO_FROM_NUMBER, TWILIO_WHATSAPP_FROM,
-    NOTIFICATION_RECIPIENTS
+    NOTIFICATION_RECIPIENTS,
+    APP_BASE_URL
 )
 
 # ============================================================================
@@ -127,9 +126,6 @@ CAMERA_NAME = "Main Pool Camera"
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
 SMTP_FROM_EMAIL = ""  # Sender email (defaults to SMTP_USERNAME if empty)
-
-# SMS/WhatsApp Configuration (Twilio)
-# All Twilio credentials imported from credentials.py
 
 # Recipients - imported from credentials.py
 # NOTIFICATION_RECIPIENTS loaded from .env file

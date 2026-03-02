@@ -2,7 +2,7 @@
 // Detection / Person types (mirrors backend payload)
 // ──────────────────────────────────────────────
 
-export type DetectionState = 'safe' | 'warning' | 'danger';
+export type DetectionState = 'safe' | 'warning' | 'danger' | 'attention';
 export type DetectionStateUpper = 'SAFE' | 'WARNING' | 'DANGER' | 'ATTENTION';
 
 export interface Person {
@@ -95,7 +95,7 @@ export type WsMessage =
 
 export interface ActiveAlert {
   trackId: number;
-  state: 'warning' | 'danger';
+  state: 'warning' | 'danger' | 'struggling';
   confidence: number;
   framesUnderwater: number;
   behavior: string;

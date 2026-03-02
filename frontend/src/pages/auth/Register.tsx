@@ -1,15 +1,14 @@
 /**
  * Register.tsx
  * Public registration page — POST /api/auth/register
- * On success the backend auto-logs in; we store the token and redirect.
+ * On success the backend sends a verification email (202 Accepted).
+ * We show a "check your inbox" screen — no auto-login.
  */
 
 import { useState, type FormEvent } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import axios from 'axios';
 import api from '../../services/api';
-import { useAuth } from '../../context/AuthContext';
-import type { AuthTokens } from '../../types/detection';
 
 // Common country dial codes — flag emoji + dial code + country name
 const COUNTRY_CODES = [
@@ -61,9 +60,6 @@ function passwordStrength(pw: string): { score: number; label: string; color: st
 }
 
 export function Register() {
-  const navigate = useNavigate();
-  const { login } = useAuth();
-
   const [form, setForm] = useState({
     name: '',
     email: '',
@@ -74,6 +70,7 @@ export function Register() {
   const [localNumber, setLocalNumber] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [pendingEmail, setPendingEmail] = useState(''); // set after successful registration
 
   const strength = passwordStrength(form.password);
 
@@ -81,14 +78,14 @@ export function Register() {
     setForm((prev) => ({ ...prev, [field]: e.target.value }));
 
   // Combine dial code + local number into E.164-style string
-  const fullPhone = `${dialCode}${localNumber.replace(/^0+/, '').replace(/\s/g, '')}`;
+  const fullPhone = localNumber.trim()
+    ? `${dialCode}${localNumber.replace(/^0+/, '').replace(/\s/g, '')}`
+    : '';
 
   const validate = (): string => {
     if (!form.name.trim() || form.name.trim().length < 2)
       return 'Name must be at least 2 characters.';
     if (!form.email) return 'Email is required.';
-    if (!localNumber.trim() || localNumber.replace(/\D/g, '').length < 5)
-      return 'Please enter a valid phone number.';
     if (form.password.length < 8) return 'Password must be at least 8 characters.';
     if (!/[A-Z]/.test(form.password)) return 'Password must contain at least one uppercase letter.';
     if (!/[0-9]/.test(form.password)) return 'Password must contain at least one digit.';
@@ -104,22 +101,15 @@ export function Register() {
 
     setIsLoading(true);
     try {
-      // Register — backend auto-logs in and returns tokens
-      const res = await api.post<AuthTokens>('/api/auth/register', {
+      await api.post('/api/auth/register', {
         name: form.name.trim(),
         email: form.email,
-        phone_number: fullPhone,
+        phone_number: fullPhone || undefined,
         password: form.password,
       });
 
-      // Store token directly (backend already created a session)
-      const { access_token } = res.data;
-      localStorage.setItem('dds_token', access_token);
-      localStorage.setItem('dds_user', JSON.stringify(res.data.user));
-
-      // Use the login fn from context to hydrate state
-      await login(form.email, form.password);
-      navigate('/');
+      // 202 Accepted — account created but not yet verified
+      setPendingEmail(form.email);
     } catch (err: unknown) {
       const msg = axios.isAxiosError(err)
         ? (err.response?.data?.detail as string) ?? 'Registration failed'
@@ -130,6 +120,54 @@ export function Register() {
     }
   };
 
+  // -----------------------------------------------------------------------
+  // "Check your inbox" screen
+  // -----------------------------------------------------------------------
+  if (pendingEmail) {
+    return (
+      <div className="min-h-screen bg-[#0B0F19] flex items-center justify-center p-4">
+        <div className="w-full max-w-sm text-center space-y-6">
+          <div>
+            <h1 className="text-2xl font-bold text-white tracking-widest uppercase">PoolGuard</h1>
+            <p className="text-[#9CA3AF] text-sm mt-1">Drowning Detection System</p>
+          </div>
+
+          <div className="bg-[#121212] border border-[#1F2937] rounded p-8 flex flex-col items-center gap-4">
+            <div className="text-5xl">📧</div>
+            <h2 className="text-white font-semibold text-lg">Check your inbox</h2>
+            <p className="text-[#9CA3AF] text-sm leading-relaxed">
+              We sent a verification link to{' '}
+              <span className="text-[#3B82F6] font-medium">{pendingEmail}</span>.
+              <br />
+              Click the link in the email to activate your account. The link expires in 30&nbsp;minutes.
+            </p>
+            <p className="text-[#6B7280] text-xs">
+              Didn't receive it? Check your spam folder or{' '}
+              <button
+                type="button"
+                className="text-[#3B82F6] hover:underline"
+                onClick={() => setPendingEmail('')}
+              >
+                try registering again
+              </button>
+              .
+            </p>
+          </div>
+
+          <p className="text-[#6B7280] text-xs">
+            Already verified?{' '}
+            <Link to="/login" className="text-[#3B82F6] hover:underline">
+              Sign in
+            </Link>
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // -----------------------------------------------------------------------
+  // Registration form
+  // -----------------------------------------------------------------------
   return (
     <div className="min-h-screen bg-[#0B0F19] flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
@@ -177,11 +215,12 @@ export function Register() {
             />
           </div>
 
-          {/* Phone */}
+          {/* Phone (optional) */}
           <div className="flex flex-col gap-1.5">
-            <label className="text-[#9CA3AF] text-xs uppercase tracking-wide">Phone Number</label>
+            <label className="text-[#9CA3AF] text-xs uppercase tracking-wide">
+              Phone Number <span className="text-[#4B5563] normal-case">(optional)</span>
+            </label>
             <div className="flex gap-2">
-              {/* Country code dropdown */}
               <select
                 value={dialCode}
                 onChange={(e) => setDialCode(e.target.value)}
@@ -194,19 +233,14 @@ export function Register() {
                   </option>
                 ))}
               </select>
-              {/* Local number input */}
               <input
                 type="tel"
-                required
                 value={localNumber}
                 onChange={(e) => setLocalNumber(e.target.value)}
                 className="flex-1 bg-[#0B0F19] border border-[#1F2937] text-white text-sm rounded px-3 py-2 focus:outline-none focus:border-[#3B82F6] transition-colors"
                 placeholder="9876543210"
               />
             </div>
-            <span className="text-[#4B5563] text-[11px]">
-              Selected: {dialCode} — number will be sent as <span className="text-[#6B7280]">{fullPhone || dialCode + '…'}</span>
-            </span>
           </div>
 
           {/* Password */}

@@ -24,6 +24,7 @@ export function Dashboard() {
 
   const vW = detection.videoInfo?.width ?? 1280;
   const vH = detection.videoInfo?.height ?? 720;
+  const vFPS = detection.videoInfo?.fps ?? 30;
 
   return (
     <div className="flex-1 flex overflow-hidden p-4 gap-4">
@@ -46,6 +47,7 @@ export function Dashboard() {
         <VideoCanvas
           srcWidth={vW}
           srcHeight={vH}
+          fps={vFPS}
           className="flex-1 rounded border border-[#1F2937]"
         />
 

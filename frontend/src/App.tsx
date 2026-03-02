@@ -20,6 +20,9 @@ import { Upload } from './pages/Upload';
 import { Live } from './pages/Live';
 import { Login } from './pages/Login';
 import { Register } from './pages/auth/Register';
+import { VerifyEmail } from './pages/auth/VerifyEmail';
+import { ForgotPassword } from './pages/auth/ForgotPassword';
+import { ResetPassword } from './pages/auth/ResetPassword';
 import { Profile } from './pages/profile/Profile';
 import { ChangePassword } from './pages/profile/ChangePassword';
 import { AdminLayout } from './pages/admin/AdminLayout';
@@ -59,6 +62,9 @@ export default function App() {
           {/* Public routes */}
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          <Route path="/verify-email" element={<VerifyEmail />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
 
           {/* Protected routes */}
           <Route element={<ProtectedLayout />}>

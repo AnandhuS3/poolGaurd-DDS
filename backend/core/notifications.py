@@ -126,13 +126,9 @@ class NotificationService:
             
             message = self._format_message(track_id, severity, camera_name, timestamp, recipients)
             
-            # Send notification based on type
-            if self.notification_type == "email":
+            # Send notification based on type (email only; SMS/WhatsApp removed)
+            if self.notification_type in ("email", "sms", "whatsapp"):
                 await self._send_email(message, severity, recipients)
-            elif self.notification_type == "sms":
-                await self._send_sms(message, recipients)
-            elif self.notification_type == "whatsapp":
-                await self._send_whatsapp(message, recipients)
             else:
                 logger.error(f"[NOTIFICATION] Unknown notification type: {self.notification_type}")
                 return
@@ -342,93 +338,164 @@ Check camera feed and respond immediately if assistance needed.
             logger.error(f"[NOTIFICATION] ✗ Email send failed: {e}")
             raise
     
-    async def _send_sms(self, message: str, recipients: Dict):
-        """
-        Send SMS notification via Twilio.
-        REMOTE NOTIFICATION - SMS implementation
-        """
-        try:
-            from twilio.rest import Client
-        except ImportError:
-            raise ImportError("Twilio package not installed. Run: pip install twilio")
-        
-        account_sid = self._get_config_value("TWILIO_ACCOUNT_SID", "")
-        auth_token = self._get_config_value("TWILIO_AUTH_TOKEN", "")
-        from_number = self._get_config_value("TWILIO_FROM_NUMBER", "")
-        
-        if not account_sid or not auth_token or not from_number:
-            raise ValueError("Twilio credentials not configured")
-        
-        # Determine recipient phone number(s)
-        if 'phone_number' in recipients and recipients['phone_number']:
-            to_numbers = [recipients['phone_number']]
-        elif 'recipients_list' in recipients:
-            to_numbers = recipients['recipients_list']
-        else:
-            raise ValueError("No SMS recipients available")
-        
-        client = Client(account_sid, auth_token)
-        
-        # Send to all recipients
-        loop = asyncio.get_event_loop()
-        for to_number in to_numbers:
-            await loop.run_in_executor(
-                None,
-                lambda: client.messages.create(
-                    body=message,
-                    from_=from_number,
-                    to=to_number
-                )
-            )
-    
-    async def _send_whatsapp(self, message: str, recipients: Dict):
-        """
-        Send WhatsApp notification via Twilio.
-        REMOTE NOTIFICATION - WhatsApp implementation
-        """
-        try:
-            from twilio.rest import Client
-        except ImportError:
-            raise ImportError("Twilio package not installed. Run: pip install twilio")
-        
-        account_sid = self._get_config_value("TWILIO_ACCOUNT_SID", "")
-        auth_token = self._get_config_value("TWILIO_AUTH_TOKEN", "")
-        from_number = self._get_config_value("TWILIO_WHATSAPP_FROM", "whatsapp:+14155238886")  # Twilio sandbox
-        
-        if not account_sid or not auth_token:
-            raise ValueError("Twilio credentials not configured")
-        
-        # Determine recipient phone number(s)
-        if 'phone_number' in recipients and recipients['phone_number']:
-            to_numbers = [recipients['phone_number']]
-        elif 'recipients_list' in recipients:
-            to_numbers = recipients['recipients_list']
-        else:
-            raise ValueError("No WhatsApp recipients available")
-        
-        client = Client(account_sid, auth_token)
-        
-        # Send to all recipients (prepend whatsapp: if not present)
-        loop = asyncio.get_event_loop()
-        for to_number in to_numbers:
-            if not to_number.startswith("whatsapp:"):
-                to_number = f"whatsapp:{to_number}"
-            
-            await loop.run_in_executor(
-                None,
-                lambda: client.messages.create(
-                    body=message,
-                    from_=from_number,
-                    to=to_number
-                )
-            )
-    
     def _get_config_value(self, key: str, default=None):
         """Get config value (supports both dict-like and module config)"""
         if hasattr(self.config, 'get'):
             return self.config.get(key, default)
         return getattr(self.config, key, default)
-    
+
+    def send_verification_email(self, user_name: str, user_email: str, verification_url: str) -> bool:
+        """
+        Send email verification link to a newly registered user.
+
+        Args:
+            user_name: Name of the new user
+            user_email: Email address to send to
+            verification_url: Full https verification URL (contains token)
+
+        Returns:
+            bool: True if sent successfully
+        """
+        try:
+            smtp_server = self._get_config_value("SMTP_SERVER", "smtp.gmail.com")
+            smtp_port = self._get_config_value("SMTP_PORT", 587)
+            smtp_user = self._get_config_value("SMTP_USERNAME", "")
+            smtp_password = self._get_config_value("SMTP_PASSWORD", "")
+            sender_email = self._get_config_value("SMTP_FROM_EMAIL", smtp_user) or smtp_user
+
+            if not smtp_user or not smtp_password:
+                logger.warning("[NOTIFICATION] SMTP credentials not configured, skipping verification email")
+                return False
+
+            msg = MIMEMultipart('alternative')
+            msg['From'] = sender_email
+            msg['To'] = user_email
+            msg['Subject'] = "Verify your PoolGuard account"
+
+            html_body = f"""
+            <html>
+              <body style="font-family: Arial, sans-serif; background:#f5f5f5; padding:20px;">
+                <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.12);">
+                  <div style="background:linear-gradient(135deg,#3B82F6,#1D4ED8);padding:30px;text-align:center;">
+                    <h1 style="color:#fff;margin:0;font-size:24px;">🏊 PoolGuard</h1>
+                    <p style="color:rgba(255,255,255,.85);margin:8px 0 0;">Verify your email address</p>
+                  </div>
+                  <div style="padding:30px;">
+                    <p style="font-size:16px;color:#333;">Hi <strong>{user_name}</strong>,</p>
+                    <p style="color:#555;line-height:1.6;">
+                      Thank you for registering. Please verify your email address by clicking the button below.
+                      This link expires in <strong>30 minutes</strong>.
+                    </p>
+                    <div style="text-align:center;margin:30px 0;">
+                      <a href="{verification_url}"
+                         style="background:#3B82F6;color:#fff;padding:14px 32px;text-decoration:none;
+                                border-radius:6px;font-weight:bold;display:inline-block;">
+                        ✅ Verify Email Address
+                      </a>
+                    </div>
+                    <p style="color:#888;font-size:13px;">
+                      If the button doesn't work, copy and paste this link into your browser:<br>
+                      <a href="{verification_url}" style="color:#3B82F6;word-break:break-all;">{verification_url}</a>
+                    </p>
+                    <p style="color:#aaa;font-size:12px;margin-top:24px;">
+                      If you did not create an account, you can safely ignore this email.
+                    </p>
+                  </div>
+                </div>
+              </body>
+            </html>
+            """
+            msg.attach(MIMEText(html_body, 'html'))
+
+            with smtplib.SMTP(smtp_server, smtp_port, timeout=10) as server:
+                server.starttls()
+                server.login(smtp_user, smtp_password)
+                server.send_message(msg)
+
+            # Do NOT log the verification URL/token in production
+            logger.info(f"[NOTIFICATION] ✅ Verification email sent to {user_email}")
+            return True
+
+        except Exception as e:
+            logger.error(f"[NOTIFICATION] ❌ Failed to send verification email to {user_email}: {e}")
+            return False
+
+    def send_password_reset_email(self, user_name: str, user_email: str, reset_url: str) -> bool:
+        """
+        Send password reset link to user.
+
+        Args:
+            user_name: Name of the user
+            user_email: Email address to send to
+            reset_url: Full https password-reset URL (contains token)
+
+        Returns:
+            bool: True if sent successfully
+        """
+        try:
+            smtp_server = self._get_config_value("SMTP_SERVER", "smtp.gmail.com")
+            smtp_port = self._get_config_value("SMTP_PORT", 587)
+            smtp_user = self._get_config_value("SMTP_USERNAME", "")
+            smtp_password = self._get_config_value("SMTP_PASSWORD", "")
+            sender_email = self._get_config_value("SMTP_FROM_EMAIL", smtp_user) or smtp_user
+
+            if not smtp_user or not smtp_password:
+                logger.warning("[NOTIFICATION] SMTP credentials not configured, skipping password reset email")
+                return False
+
+            msg = MIMEMultipart('alternative')
+            msg['From'] = sender_email
+            msg['To'] = user_email
+            msg['Subject'] = "Reset your PoolGuard password"
+
+            html_body = f"""
+            <html>
+              <body style="font-family: Arial, sans-serif; background:#f5f5f5; padding:20px;">
+                <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.12);">
+                  <div style="background:linear-gradient(135deg,#EF4444,#B91C1C);padding:30px;text-align:center;">
+                    <h1 style="color:#fff;margin:0;font-size:24px;">🔑 Password Reset</h1>
+                    <p style="color:rgba(255,255,255,.85);margin:8px 0 0;">PoolGuard Drowning Detection System</p>
+                  </div>
+                  <div style="padding:30px;">
+                    <p style="font-size:16px;color:#333;">Hi <strong>{user_name}</strong>,</p>
+                    <p style="color:#555;line-height:1.6;">
+                      We received a request to reset your password. Click the button below to choose a new password.
+                      This link expires in <strong>30 minutes</strong> and can only be used once.
+                    </p>
+                    <div style="text-align:center;margin:30px 0;">
+                      <a href="{reset_url}"
+                         style="background:#EF4444;color:#fff;padding:14px 32px;text-decoration:none;
+                                border-radius:6px;font-weight:bold;display:inline-block;">
+                        🔒 Reset Password
+                      </a>
+                    </div>
+                    <p style="color:#888;font-size:13px;">
+                      If the button doesn't work, copy and paste this link:<br>
+                      <a href="{reset_url}" style="color:#EF4444;word-break:break-all;">{reset_url}</a>
+                    </p>
+                    <p style="color:#aaa;font-size:12px;margin-top:24px;">
+                      If you did not request a password reset, please ignore this email.
+                      Your password will not change.
+                    </p>
+                  </div>
+                </div>
+              </body>
+            </html>
+            """
+            msg.attach(MIMEText(html_body, 'html'))
+
+            with smtplib.SMTP(smtp_server, smtp_port, timeout=10) as server:
+                server.starttls()
+                server.login(smtp_user, smtp_password)
+                server.send_message(msg)
+
+            logger.info(f"[NOTIFICATION] ✅ Password reset email sent to {user_email}")
+            return True
+
+        except Exception as e:
+            logger.error(f"[NOTIFICATION] ❌ Failed to send password reset email to {user_email}: {e}")
+            return False
+
     def send_welcome_email(self, user_name: str, user_email: str, role: str) -> bool:
         """
         Send welcome email to newly registered user

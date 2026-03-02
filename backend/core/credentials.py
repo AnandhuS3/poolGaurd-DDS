@@ -32,13 +32,10 @@ SMTP_USERNAME = os.getenv('SMTP_USERNAME', '')
 SMTP_PASSWORD = os.getenv('SMTP_PASSWORD', '')
 
 # ============================================================================
-# SMS/WHATSAPP CREDENTIALS (Twilio)
+# APP CONFIGURATION
 # ============================================================================
-# Get your credentials from: https://www.twilio.com/console
-TWILIO_ACCOUNT_SID = os.getenv('TWILIO_ACCOUNT_SID', '')
-TWILIO_AUTH_TOKEN = os.getenv('TWILIO_AUTH_TOKEN', '')
-TWILIO_FROM_NUMBER = os.getenv('TWILIO_FROM_NUMBER', '')
-TWILIO_WHATSAPP_FROM = os.getenv('TWILIO_WHATSAPP_FROM', 'whatsapp:+14155238886')
+# Base URL used for verification and reset links in emails
+APP_BASE_URL = os.getenv('APP_BASE_URL', 'http://localhost:5173')
 
 # ============================================================================
 # NOTIFICATION RECIPIENTS
@@ -69,11 +66,6 @@ def validate_credentials():
         warnings.append("[WARNING] SMTP_USERNAME not set - email notifications disabled")
     if not SMTP_PASSWORD:
         warnings.append("[WARNING] SMTP_PASSWORD not set - email notifications disabled")
-    
-    # Twilio credentials (optional)
-    if not TWILIO_ACCOUNT_SID and not TWILIO_AUTH_TOKEN:
-        # Only warn if notification type is SMS/WhatsApp
-        pass  # Silent - SMS/WhatsApp is optional
     
     # Print warnings
     if warnings:

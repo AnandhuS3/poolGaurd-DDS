@@ -4,15 +4,46 @@
  * Maintains the active alert list independently of frame rendering.
  *
  * RULES:
- * - Only tracks warning + danger states.
- * - Sorted: danger first, then warning.
+ * - Tracks warning, danger, and struggling (attention + struggling behavior) states.
+ * - Sorted: danger → struggling → warning.
+ * - Creates alerts from both state_change events AND frame data (fallback).
  * - Auto-removes tracks that return to safe.
- * - Prevents duplicate alerts per track per state.
- * - Handles state transitions: safe → warning → danger → safe.
+ * - Prevents stale alerts from persisting on recovery.
  */
 
 import type { ActiveAlert } from '../types/detection';
 import { wsClient } from '../core/websocket/WebSocketClient';
+
+// ── Alarm sound controller ──────────────────────────────────────────────────
+const AlarmController = (() => {
+  let audio: HTMLAudioElement | null = null;
+  let playing = false;
+
+  function _getAudio(): HTMLAudioElement {
+    if (!audio) {
+      audio = new Audio('/sounds/alarm.mp3');
+      audio.loop = true;
+    }
+    return audio;
+  }
+
+  return {
+    start() {
+      if (playing) return;
+      const a = _getAudio();
+      a.currentTime = 0;
+      a.play().catch(() => { /* blocked until first user gesture */ });
+      playing = true;
+    },
+    stop() {
+      if (!playing) return;
+      const a = _getAudio();
+      a.pause();
+      a.currentTime = 0;
+      playing = false;
+    },
+  };
+})();
 
 type AlertListener = (alerts: ActiveAlert[]) => void;
 
@@ -44,35 +75,76 @@ class AlertStoreClass {
 
           this._notify();
         } else if (stateLower === 'safe') {
-          // Track returned to safe – remove alert
+          // 'safe' → fully resolved; clear the alert.
           if (this.alerts.has(person_id)) {
             this.alerts.delete(person_id);
             this._notify();
           }
         }
+        // Note: 'attention' state is handled via frame data (behavior-aware)
       }
 
-      // Also sync from frame data – enrich alert with confidence/behavior
+      // Also sync from frame data – create missing alerts + enrich existing
       if (msg.type === 'frame') {
         let changed = false;
         msg.persons.forEach((p) => {
           const existing = this.alerts.get(p.id);
-          if (existing) {
-            // Update enrichment data without overriding detection state
-            const updated: ActiveAlert = {
-              ...existing,
-              confidence: p.confidence,
-              framesUnderwater: p.frames_underwater,
-              behavior: p.behavior,
-            };
-            this.alerts.set(p.id, updated);
-            changed = true;
-          }
 
-          // Auto-resolve alerts for tracks now in safe state
-          if (p.status === 'safe' && this.alerts.has(p.id)) {
-            this.alerts.delete(p.id);
-            changed = true;
+          // Determine if this person should have an active alert
+          const isStruggling = p.behavior === 'struggling';
+          const isAlertable =
+            p.status === 'warning' ||
+            p.status === 'danger' ||
+            (p.status === 'attention' && isStruggling);
+
+          if (isAlertable) {
+            // Determine alert state: prefer struggling label when behavior matches
+            const alertState: 'warning' | 'danger' | 'struggling' =
+              p.status === 'danger'
+                ? 'danger'
+                : isStruggling
+                ? 'struggling'
+                : 'warning';
+
+            if (!existing) {
+              // Create alert from frame data (fallback for missed state_change events)
+              this.alerts.set(p.id, {
+                trackId: p.id,
+                state: alertState,
+                confidence: p.confidence,
+                framesUnderwater: p.frames_underwater,
+                behavior: p.behavior,
+                detectedAt: Date.now(),
+              });
+              changed = true;
+            } else {
+              // Enrich existing alert with latest frame data
+              const updated: ActiveAlert = {
+                ...existing,
+                state: alertState,
+                confidence: p.confidence,
+                framesUnderwater: p.frames_underwater,
+                behavior: p.behavior,
+              };
+              this.alerts.set(p.id, updated);
+              changed = true;
+            }
+          } else if (existing) {
+            if (p.status === 'safe') {
+              // Fully resolved – remove alert
+              this.alerts.delete(p.id);
+              changed = true;
+            } else {
+              // Keep enriching non-alertable states without removing
+              const updated: ActiveAlert = {
+                ...existing,
+                confidence: p.confidence,
+                framesUnderwater: p.frames_underwater,
+                behavior: p.behavior,
+              };
+              this.alerts.set(p.id, updated);
+              changed = true;
+            }
           }
         });
 
@@ -83,13 +155,25 @@ class AlertStoreClass {
 
   private _notify() {
     const sorted = this._sorted();
+    // Play alarm whenever there is at least one active alert; stop when all clear
+    const hasActiveAlert = sorted.some(
+      (a) => a.state === 'danger' || a.state === 'warning' || a.state === 'struggling'
+    );
+    if (hasActiveAlert) {
+      AlarmController.start();
+    } else {
+      AlarmController.stop();
+    }
     this.listeners.forEach((l) => l(sorted));
   }
 
   private _sorted(): ActiveAlert[] {
+    const order: Record<string, number> = { danger: 0, struggling: 1, warning: 2 };
     return Array.from(this.alerts.values()).sort((a, b) => {
-      if (a.state === b.state) return b.detectedAt - a.detectedAt;
-      return a.state === 'danger' ? -1 : 1;
+      const oa = order[a.state] ?? 3;
+      const ob = order[b.state] ?? 3;
+      if (oa !== ob) return oa - ob;
+      return b.detectedAt - a.detectedAt;
     });
   }
 

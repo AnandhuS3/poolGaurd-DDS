@@ -52,10 +52,6 @@ except ImportError:
     SMTP_USERNAME = ""
     SMTP_PASSWORD = ""
     SMTP_FROM_EMAIL = ""
-    TWILIO_ACCOUNT_SID = ""
-    TWILIO_AUTH_TOKEN = ""
-    TWILIO_FROM_NUMBER = ""
-    TWILIO_WHATSAPP_FROM = "whatsapp:+14155238886"
 
 # REMOTE NOTIFICATION - Initialize notification service
 if NOTIFICATIONS_AVAILABLE and NOTIFICATION_ENABLED:
@@ -69,10 +65,6 @@ if NOTIFICATIONS_AVAILABLE and NOTIFICATION_ENABLED:
         "SMTP_USERNAME": SMTP_USERNAME,
         "SMTP_PASSWORD": SMTP_PASSWORD,
         "SMTP_FROM_EMAIL": SMTP_FROM_EMAIL,
-        "TWILIO_ACCOUNT_SID": TWILIO_ACCOUNT_SID,
-        "TWILIO_AUTH_TOKEN": TWILIO_AUTH_TOKEN,
-        "TWILIO_FROM_NUMBER": TWILIO_FROM_NUMBER,
-        "TWILIO_WHATSAPP_FROM": TWILIO_WHATSAPP_FROM,
     }
     notification_service = create_notification_service(notification_config)
     logger.info("[NOTIFICATION] Service enabled and initialized")
@@ -162,13 +154,8 @@ elif not USE_ENSEMBLE:
 else:
     logger.warning(f"[WARNING] Secondary model not found: {MODEL_PATH_SECONDARY}. Using single model.")
 
-# Initialize DeepSORT tracker
-tracker = DeepSort(
-    max_age=MAX_AGE,
-    n_init=N_INIT,
-    nms_max_overlap=NMS_MAX_OVERLAP,
-    max_cosine_distance=MAX_COSINE_DISTANCE
-)
+# NOTE: DeepSORT tracker is created inside process_video_realtime() per session.
+# Module-level tracker was removed to prevent track-ID contamination across sessions.
 
 # ============================================================================
 # POSE-DRIVEN DETECTION PIPELINE (NEW)
@@ -276,14 +263,32 @@ async def process_video_realtime(video_path, websocket):
     # Calculate frame-based thresholds for drowning detection
     fps = max(fps, 1)  # Prevent division by zero
     drowning_threshold_frames = int(DROWNING_DURATION_SEC * fps)
-    try:
-        warning_threshold_frames = int(WARNING_DURATION_SEC * fps)
-    except NameError:
-        warning_threshold_frames = int(2 * fps)  # Default 2 seconds if not defined
+    warning_threshold_frames = int(WARNING_DURATION_SEC * fps)
 
     logger.info(f"Starting real-time video processing: {video_path}")
     logger.info(f"Video properties: {width}x{height} @ {fps} FPS, {total_frames} frames")
     logger.info(f"Drowning thresholds: {drowning_threshold_frames} frames ({DROWNING_DURATION_SEC}s), Warning: {warning_threshold_frames} frames")
+
+    # Create a fresh DeepSORT tracker for this session.
+    # CRITICAL: must NOT be module-level; a shared tracker causes track-ID bleed
+    # between separate video sessions (person #5 from session A re-appears in session B).
+    tracker = DeepSort(
+        max_age=MAX_AGE,
+        n_init=N_INIT,
+        nms_max_overlap=NMS_MAX_OVERLAP,
+        max_cosine_distance=MAX_COSINE_DISTANCE
+    )
+    logger.info("[TRACKER] Fresh DeepSORT tracker created for this session")
+
+    # Reset pose-driven processor per-track state (temporal buffers, state machines).
+    if pose_processor:
+        pose_processor.reset()
+        logger.info("[POSE] Pose processor state reset for new session")
+
+    # Reset LSTM per-track buffers so stale keypoint sequences don't pollute new video.
+    if lstm_inference_engine:
+        lstm_inference_engine.track_buffers.clear()
+        logger.info("[LSTM] Inference buffers cleared for new session")
 
     # Tracking data - UPGRADED: Cleaner structure
     person_data = {}
@@ -373,8 +378,8 @@ async def process_video_realtime(video_path, websocket):
                             x1, y1, x2, y2 = map(int, box.xyxy[0])
                             conf = float(box.conf[0])
                             cls = int(box.cls[0])
-                            # Add with slightly boosted confidence for ensemble
-                            detections.append(([x1, y1, x2 - x1, y2 - y1], conf * 1.1, cls))
+                            # Boost ensemble confidence slightly; cap at 1.0
+                            detections.append(([x1, y1, x2 - x1, y2 - y1], min(conf * 1.1, 1.0), cls))
                 
                 # Cache detections for motion-based reuse
                 last_detections = detections.copy()
@@ -601,9 +606,8 @@ async def process_video_realtime(video_path, websocket):
                         
                         # Only escalate state, never de-escalate (safety first)
                         if lstm_state == "DANGER" and person_data[track_id]["state"] != "DANGER":
-                            logger.warning(f"[LSTM] Person #{track_id}: LSTM detected DANGER (confidence: {lstm_result['confidence']:.2f})")
-                            # Could optionally set state to DANGER here if desired
-                            # person_data[track_id]["state"] = "DANGER"
+                            logger.warning(f"[LSTM] Person #{track_id}: LSTM high-confidence DANGER override (conf={lstm_result['confidence']:.2f})")
+                            person_data[track_id]["state"] = "DANGER"
                 
                     # DANGER state is sticky - no auto-recovery
 
@@ -619,7 +623,7 @@ async def process_video_realtime(video_path, websocket):
                         "old_state": previous_state,
                         "new_state": new_state,
                         "timestamp": time.time(),
-                        "frames_underwater": frames_underwater
+                        "frames_underwater": person_data[track_id].get("frames_underwater", 0)
                     }
                     
                     await websocket.send_json(state_change_event)
@@ -643,26 +647,10 @@ async def process_video_realtime(video_path, websocket):
                                 camera_name=CAMERA_NAME
                             )
                 
-                # Draw bounding box on frame
-                color = COLOR_SAFE
-                if new_state == "WARNING":
-                    color = COLOR_WARNING
-                elif new_state == "DANGER":
-                    color = COLOR_DANGER
-
-                cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-
-                # Draw label with background (include behavior if available)
-                behavior_text = ""
-                if VISUALIZE_BEHAVIOR and person_data[track_id].get("behavior", "unknown") != "unknown":
-                    behavior_text = f" ({person_data[track_id]['behavior']})"
-                
-                label = f"ID:{track_id} {new_state}{behavior_text}"
-                label_size, _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
-                cv2.rectangle(frame, (x1, y1 - label_size[1] - 10),
-                            (x1 + label_size[0], y1), color, -1)
-                cv2.putText(frame, label, (x1, y1 - 5),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+                # NOTE: Bounding boxes and labels are drawn by the frontend canvas overlay.
+                # Removing all OpenCV drawing here eliminates duplicate rendering and
+                # reduces CPU overhead.  The raw frame is sent as-is; the frontend
+                # BoundingOverlay draws clean, colour-coded boxes on a transparent canvas.
 
                 # Add to tracked persons list
                 # Safely get confidence value
@@ -689,12 +677,7 @@ async def process_video_realtime(video_path, websocket):
                     "lstm_available": person_data[track_id].get("lstm_available", False)
                 })
 
-            # Add frame info
-            info_text = f"Frame: {frame_count}/{total_frames} | FPS: {fps} | Persons: {len(tracked_persons)}"
-            cv2.putText(frame, info_text, (10, 30),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-
-            # Encode analysis frame with annotations
+            # Encode raw (unannotated) frame – frontend BoundingOverlay draws all overlays via canvas
             encode_success, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
             if not encode_success:
                 logger.warning(f"Failed to encode frame {frame_count}")

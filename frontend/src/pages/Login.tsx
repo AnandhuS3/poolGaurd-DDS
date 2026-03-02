@@ -81,12 +81,17 @@ export function Login() {
         </form>
 
         <p className="text-center text-[#6B7280] text-xs mt-4">
-          Default admin: admin@dds.local / admin123
+          Default admin: admin@dds.local / Admin1234
         </p>
         <p className="text-center text-[#6B7280] text-xs mt-2">
           Don't have an account?{' '}
           <Link to="/register" className="text-[#3B82F6] hover:underline">
             Register
+          </Link>
+        </p>
+        <p className="text-center text-[#6B7280] text-xs mt-1">
+          <Link to="/forgot-password" className="text-[#3B82F6] hover:underline">
+            Forgot password?
           </Link>
         </p>
       </div>

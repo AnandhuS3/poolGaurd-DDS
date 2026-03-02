@@ -23,6 +23,7 @@ const BOX_LINE_WIDTH = 2;
 /**
  * Draw all bounding boxes + labels onto the canvas.
  * Canvas is sized to match the displayed image dimensions.
+ * fps is the actual video fps forwarded from the backend video_info message.
  */
 export function drawDetections(
   ctx: CanvasRenderingContext2D,
@@ -30,7 +31,8 @@ export function drawDetections(
   srcWidth: number,
   srcHeight: number,
   canvasWidth: number,
-  canvasHeight: number
+  canvasHeight: number,
+  fps: number = 30
 ): void {
   ctx.clearRect(0, 0, canvasWidth, canvasHeight);
 
@@ -61,8 +63,8 @@ export function drawDetections(
     ctx.fillStyle = `${color}18`;
     ctx.fillRect(sx1, sy1, sw, sh);
 
-    // Label
-    const durationSec = (person.frames_underwater / 30).toFixed(1);
+    // Label – use real fps for accurate duration display
+    const durationSec = fps > 0 ? (person.frames_underwater / fps).toFixed(1) : '0.0';
     const label = `#${person.id}  ${person.state}  ${(person.confidence * 100).toFixed(0)}%  ${durationSec}s`;
 
     const metrics = ctx.measureText(label);

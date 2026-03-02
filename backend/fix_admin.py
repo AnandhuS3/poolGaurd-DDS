@@ -13,7 +13,7 @@ cursor = conn.cursor(dictionary=True)
 
 # Check columns on users table
 cursor.execute("SHOW COLUMNS FROM users")
-cols = [r['Field'] for r in cursor.fetchall()]
+cols = [['Field'] for r in cursor.fetchall()]
 print("users columns:", cols)
 
 # Check if is_system_admin exists

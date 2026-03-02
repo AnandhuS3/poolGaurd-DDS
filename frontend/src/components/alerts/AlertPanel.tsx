@@ -21,6 +21,7 @@ export function AlertPanel({ className = '' }: AlertPanelProps) {
   }, []);
 
   const dangerCount = alerts.filter((a) => a.state === 'danger').length;
+  const strugglingCount = alerts.filter((a) => a.state === 'struggling').length;
   const warningCount = alerts.filter((a) => a.state === 'warning').length;
 
   return (
@@ -36,6 +37,11 @@ export function AlertPanel({ className = '' }: AlertPanelProps) {
           {dangerCount > 0 && (
             <span className="text-xs font-bold bg-[#FF3B30] text-white px-2 py-0.5 rounded">
               {dangerCount} DANGER
+            </span>
+          )}
+          {strugglingCount > 0 && (
+            <span className="text-xs font-bold bg-[#F97316] text-white px-2 py-0.5 rounded">
+              {strugglingCount} STRUGGLING
             </span>
           )}
           {warningCount > 0 && (

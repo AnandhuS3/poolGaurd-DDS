@@ -4,8 +4,9 @@
  * Renders the analyzed video feed from the backend.
  *
  * ARCHITECTURE:
- * - <img> element displays the base64 JPEG annotated frame from backend.
- * - <canvas> overlay draws clean bounding boxes via Canvas API.
+ * - <img> element displays the raw base64 JPEG frame from the backend.
+ *   The backend no longer draws OpenCV annotations; the canvas is the sole drawing layer.
+ * - <canvas> overlay draws bounding boxes, labels, and HUD via Canvas API.
  * - requestAnimationFrame (rAF) drives canvas redraws — zero React re-renders per frame.
  * - DetectionStore.latestFrame is read from a ref, not React state.
  *
@@ -20,10 +21,12 @@ interface VideoCanvasProps {
   /** Source video dimensions (from video_info message) */
   srcWidth: number;
   srcHeight: number;
+  /** Source video fps (from video_info message) – used for duration labels */
+  fps?: number;
   className?: string;
 }
 
-export function VideoCanvas({ srcWidth, srcHeight, className = '' }: VideoCanvasProps) {
+export function VideoCanvas({ srcWidth, srcHeight, fps = 30, className = '' }: VideoCanvasProps) {
   const imgRef = useRef<HTMLImageElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef<number>(0);
@@ -51,12 +54,12 @@ export function VideoCanvas({ srcWidth, srcHeight, className = '' }: VideoCanvas
         const vW = srcWidth || frame.persons[0]?.bbox[2] || 1280;
         const vH = srcHeight || frame.persons[0]?.bbox[3] || 720;
 
-        drawDetections(ctx, frame.persons, vW, vH, dispW, dispH);
+        drawDetections(ctx, frame.persons, vW, vH, dispW, dispH, fps);
         drawHUD(ctx, frame.frame_number, frame.total_frames, frame.performance.processing_fps);
       }
 
-      // Update the <img> src from base64 analysis frame (annotated by backend too)
-      // We use the backend frame as the video source; our canvas adds clean overlays on top.
+      // Update the <img> src with the raw JPEG frame from the backend.
+      // Backend sends unannotated frames; this canvas is the sole drawing layer.
       if (img.dataset.lastFrame !== frame.frame_number.toString()) {
         img.src = `data:image/jpeg;base64,${frame.analysis_frame}`;
         img.dataset.lastFrame = frame.frame_number.toString();
@@ -64,7 +67,7 @@ export function VideoCanvas({ srcWidth, srcHeight, className = '' }: VideoCanvas
     }
 
     rafRef.current = requestAnimationFrame(renderLoop);
-  }, [srcWidth, srcHeight]);
+  }, [srcWidth, srcHeight, fps]);
 
   useEffect(() => {
     rafRef.current = requestAnimationFrame(renderLoop);

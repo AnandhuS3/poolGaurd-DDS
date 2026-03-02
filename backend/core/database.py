@@ -142,15 +142,24 @@ class User:
     """User model with CRUD operations"""
     
     @staticmethod
-    def create(name: str, email: str, phone_number: str, password_hash: str, 
-               role: str = 'guard', is_active: bool = True) -> Optional[int]:
+    def create(name: str, email: str, phone_number: str, password_hash: str,
+               role: str = 'guard', is_active: bool = True,
+               email_verified: bool = False,
+               verification_token: Optional[str] = None,
+               verification_token_expiry: Optional[datetime] = None) -> Optional[int]:
         """Create a new user"""
         query = """
-            INSERT INTO users (name, email, phone_number, password_hash, role, is_active)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            INSERT INTO users (name, email, phone_number, password_hash, role, is_active,
+                               email_verified, verification_token, verification_token_expiry)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
         try:
-            user_id = db.execute_query(query, (name, email, phone_number, password_hash, role, is_active), fetch=False)
+            user_id = db.execute_query(
+                query,
+                (name, email, phone_number, password_hash, role, is_active,
+                 email_verified, verification_token, verification_token_expiry),
+                fetch=False,
+            )
             logger.info(f"[DATABASE] User created: {email} (ID: {user_id})")
             return user_id
         except Error as e:
@@ -187,7 +196,11 @@ class User:
         else:
             updates.update(kwargs)
         
-        allowed_fields = ['name', 'email', 'phone_number', 'password_hash', 'role', 'is_active']
+        allowed_fields = [
+            'name', 'email', 'phone_number', 'password_hash', 'role', 'is_active',
+            'email_verified', 'verification_token', 'verification_token_expiry',
+            'password_reset_token', 'password_reset_expiry',
+        ]
         updates = {k: v for k, v in updates.items() if k in allowed_fields and v is not None}
         
         if not updates:
@@ -256,6 +269,102 @@ class User:
         query = "SELECT is_system_admin FROM users WHERE id = %s"
         results = db.execute_query(query, (user_id,))
         return results[0]['is_system_admin'] if results else False
+
+    # ------------------------------------------------------------------
+    # Email Verification helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def get_by_verification_token(token: str) -> Optional[Dict]:
+        """Lookup a user by their email-verification token."""
+        query = "SELECT * FROM users WHERE verification_token = %s LIMIT 1"
+        results = db.execute_query(query, (token,))
+        return results[0] if results else None
+
+    @staticmethod
+    def set_email_verified(user_id: int) -> bool:
+        """Mark account as email-verified and clear the one-time token."""
+        query = """
+            UPDATE users
+            SET email_verified = TRUE,
+                verification_token = NULL,
+                verification_token_expiry = NULL
+            WHERE id = %s
+        """
+        try:
+            db.execute_query(query, (user_id,), fetch=False)
+            return True
+        except Error as e:
+            logger.error(f"[DATABASE] set_email_verified failed: {e}")
+            return False
+
+    @staticmethod
+    def clear_verification_token(user_id: int) -> bool:
+        """Remove an expired verification token."""
+        query = """
+            UPDATE users
+            SET verification_token = NULL, verification_token_expiry = NULL
+            WHERE id = %s
+        """
+        try:
+            db.execute_query(query, (user_id,), fetch=False)
+            return True
+        except Error as e:
+            logger.error(f"[DATABASE] clear_verification_token failed: {e}")
+            return False
+
+    # ------------------------------------------------------------------
+    # Password Reset helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def get_by_reset_token(token: str) -> Optional[Dict]:
+        """Lookup a user by their password-reset token."""
+        query = "SELECT * FROM users WHERE password_reset_token = %s LIMIT 1"
+        results = db.execute_query(query, (token,))
+        return results[0] if results else None
+
+    @staticmethod
+    def set_password_reset_token(user_id: int, token: str, expiry: datetime) -> bool:
+        """Store a password-reset token and its expiry."""
+        query = """
+            UPDATE users
+            SET password_reset_token = %s, password_reset_expiry = %s
+            WHERE id = %s
+        """
+        try:
+            db.execute_query(query, (token, expiry, user_id), fetch=False)
+            return True
+        except Error as e:
+            logger.error(f"[DATABASE] set_password_reset_token failed: {e}")
+            return False
+
+    @staticmethod
+    def clear_reset_token(user_id: int) -> bool:
+        """Remove a used / expired reset token."""
+        query = """
+            UPDATE users
+            SET password_reset_token = NULL, password_reset_expiry = NULL
+            WHERE id = %s
+        """
+        try:
+            db.execute_query(query, (user_id,), fetch=False)
+            return True
+        except Error as e:
+            logger.error(f"[DATABASE] clear_reset_token failed: {e}")
+            return False
+
+    @staticmethod
+    def update_password_hash(user_id: int, new_hash: str) -> bool:
+        """Directly update the password hash (used for password reset flow)."""
+        query = "UPDATE users SET password_hash = %s WHERE id = %s"
+        try:
+            db.execute_query(query, (new_hash, user_id), fetch=False)
+            logger.info(f"[DATABASE] Password hash updated for user {user_id}")
+            return True
+        except Error as e:
+            logger.error(f"[DATABASE] update_password_hash failed: {e}")
+            return False
 
 
 class Session:

@@ -18,18 +18,27 @@ CREATE TABLE IF NOT EXISTS users (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     email VARCHAR(255) NOT NULL UNIQUE,
-    phone_number VARCHAR(20) NOT NULL,
+    phone_number VARCHAR(20) NOT NULL DEFAULT '',
     password_hash VARCHAR(255) NOT NULL,
     role ENUM('admin', 'guard') NOT NULL DEFAULT 'guard',
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     is_system_admin BOOLEAN NOT NULL DEFAULT FALSE,
+    -- Email verification (added for hardened auth)
+    email_verified BOOLEAN NOT NULL DEFAULT FALSE,
+    verification_token VARCHAR(255) NULL,
+    verification_token_expiry DATETIME NULL,
+    -- Password reset
+    password_reset_token VARCHAR(255) NULL,
+    password_reset_expiry DATETIME NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     
     INDEX idx_email (email),
     INDEX idx_role (role),
     INDEX idx_is_active (is_active),
-    INDEX idx_system_admin (is_system_admin)
+    INDEX idx_system_admin (is_system_admin),
+    INDEX idx_verification_token (verification_token),
+    INDEX idx_reset_token (password_reset_token)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================================

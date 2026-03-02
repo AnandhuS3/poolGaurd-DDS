@@ -27,7 +27,6 @@ from core.auth import (
 from core.notifications import initialize_database, NotificationService
 from core import config as app_config
 from core.paths import UPLOADS_DIR, OUTPUT_DIR, SOUNDS_DIR, get_schema_path_str, ensure_directories, FRONTEND_DIR
-
 # Import config
 try:
     from config import (
@@ -207,52 +206,109 @@ async def login(credentials: LoginRequest, request: Request):
     }
 
 
-@app.post("/api/auth/register", response_model=AuthResponse)
+@app.post("/api/auth/register", status_code=202)
 async def register(user_data: RegisterRequest, request: Request):
     """
-    Public user registration endpoint
-    Anyone can register as a 'guard' role
+    Public user registration.
+    Creates an unverified account and sends an email verification link.
+    Returns 202 Accepted — the client should prompt the user to check their inbox.
     """
-    ip_address = get_client_ip(request)
-    user_agent = get_user_agent(request)
-    
-    # Force role to 'guard' for public registrations
+    # Register without activating; returns verification_token for unverified accounts
     user_info = AuthService.register_user(
         name=user_data.name,
         email=user_data.email,
         phone_number=user_data.phone_number,
         password=user_data.password,
-        role='guard',  # Public registrations are 'guard' role by default
-        created_by=None  # Self-registration
+        role='guard',
+        created_by=None,
     )
-    
-    # Send welcome email in background (non-blocking)
-    try:
-        asyncio.create_task(
-            asyncio.to_thread(
-                notification_service.send_welcome_email,
-                user_data.name,
-                user_data.email,
-                'guard'
+
+    verification_token = user_info.pop("verification_token", None)
+
+    if verification_token:
+        # Build the verification URL pointing to the frontend route
+        base_url = getattr(app_config, "APP_BASE_URL", "http://localhost:5173")
+        verification_url = f"{base_url}/verify-email?token={verification_token}"
+
+        # Send verification email (non-blocking)
+        try:
+            asyncio.create_task(
+                asyncio.to_thread(
+                    notification_service.send_verification_email,
+                    user_data.name,
+                    user_data.email,
+                    verification_url,
+                )
             )
-        )
-        logger.info(f"[REGISTRATION] Welcome email queued for {user_data.email}")
-    except Exception as e:
-        logger.error(f"[REGISTRATION] Failed to queue welcome email: {e}")
-    
-    # Auto-login after registration
-    access_token, user_info = AuthService.login(
-        user_data.email,
-        user_data.password,
-        ip_address,
-        user_agent
-    )
-    
+        except Exception as e:
+            logger.error(f"[REGISTRATION] Failed to queue verification email: {e}")
+
     return {
-        "access_token": access_token,
-        "token_type": "bearer",
-        "user": user_info
+        "message": "Registration successful. Please check your email to verify your account before logging in.",
+        "email": user_data.email,
     }
+
+
+@app.get("/api/auth/verify-email")
+async def verify_email(token: str):
+    """
+    Email verification endpoint — called when the user clicks the link in their inbox.
+    Marks the account as verified and returns a success message.
+    """
+    user = AuthService.verify_email(token)
+    return {
+        "message": "Email verified successfully. You can now log in.",
+        "name": user["name"],
+        "email": user["email"],
+    }
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+
+
+@app.post("/api/auth/forgot-password", status_code=202)
+async def forgot_password(body: ForgotPasswordRequest, request: Request):
+    """
+    Request a password-reset email.
+    Always returns 202 to prevent user-enumeration (same response whether email exists or not).
+    """
+    ip_address = get_client_ip(request)
+    reset_token = AuthService.request_password_reset(body.email, ip_address)
+
+    if reset_token:
+        user = __import__('core.database', fromlist=['User']).User.get_by_email(body.email)
+        base_url = getattr(app_config, "APP_BASE_URL", "http://localhost:5173")
+        reset_url = f"{base_url}/reset-password?token={reset_token}"
+
+        try:
+            asyncio.create_task(
+                asyncio.to_thread(
+                    notification_service.send_password_reset_email,
+                    user['name'] if user else '',
+                    body.email,
+                    reset_url,
+                )
+            )
+        except Exception as e:
+            logger.error(f"[RESET] Failed to queue reset email: {e}")
+
+    return {"message": "If that email is registered, a password-reset link has been sent."}
+
+
+@app.post("/api/auth/reset-password")
+async def reset_password(body: ResetPasswordRequest):
+    """
+    Consume a password-reset token and set the new password.
+    Token is single-use and expires after 30 minutes.
+    """
+    AuthService.reset_password(body.token, body.new_password)
+    return {"message": "Password has been reset successfully. You can now log in."}
 
 
 @app.post("/api/auth/logout")
