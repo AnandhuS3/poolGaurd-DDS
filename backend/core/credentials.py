@@ -54,8 +54,12 @@ JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY', '')
 # ============================================================================
 # Comma-separated list of allowed frontend origins
 # Example: ALLOWED_ORIGINS=http://localhost:5173,https://your-frontend.up.railway.app
-# Convenience single-URL alias (Railway: set FRONTEND_URL on the backend service)
-_origins_str = os.getenv('ALLOWED_ORIGINS', 'http://localhost:5173')
+# The Railway frontend URL is included in the default so no dashboard variable is required.
+_RAILWAY_FRONTEND = 'https://frontend-production-211f.up.railway.app'
+_origins_str = os.getenv(
+    'ALLOWED_ORIGINS',
+    f'http://localhost:5173,{_RAILWAY_FRONTEND}'
+)
 ALLOWED_ORIGINS = [o.strip() for o in _origins_str.split(',') if o.strip()]
 
 # FRONTEND_URL is a single-value convenience alias for Railway deployments.
@@ -63,6 +67,11 @@ ALLOWED_ORIGINS = [o.strip() for o in _origins_str.split(',') if o.strip()]
 _frontend_url = os.getenv('FRONTEND_URL', '').strip().rstrip('/')
 if _frontend_url and _frontend_url not in ALLOWED_ORIGINS:
     ALLOWED_ORIGINS.append(_frontend_url)
+
+# Always ensure the known Railway frontend is allowed (guard against ALLOWED_ORIGINS
+# being overridden in .env without including the Railway URL).
+if _RAILWAY_FRONTEND not in ALLOWED_ORIGINS:
+    ALLOWED_ORIGINS.append(_RAILWAY_FRONTEND)
 
 # ============================================================================
 # NOTIFICATION RECIPIENTS
