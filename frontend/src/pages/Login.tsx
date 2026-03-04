@@ -3,23 +3,31 @@
  * Authentication page.
  */
 
-import { useState, type FormEvent } from 'react';
+import { useState, useEffect, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 export function Login() {
-  const { login, isLoading } = useAuth();
+  const { login, isLoading, token } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+
+  // Navigate only after the token state has actually been committed by React.
+  // Calling navigate() immediately after `await login()` can race against
+  // React flushing the setToken/setUser updates, causing ProtectedLayout to
+  // see token=null and redirect back to /login.
+  useEffect(() => {
+    if (token) navigate('/', { replace: true });
+  }, [token, navigate]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
     try {
       await login(email, password);
-      navigate('/');
+      // Navigation is handled by the useEffect above once token is set.
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Login failed');
     }

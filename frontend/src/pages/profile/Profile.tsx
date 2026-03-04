@@ -81,15 +81,25 @@ export function Profile() {
             </div>
           )}
 
-          {/* Role badge (read-only) */}
-          {user?.role && (
-            <div className="flex items-center gap-2">
-              <span className="text-[#9CA3AF] text-xs uppercase tracking-wide">Role</span>
-              <span className="px-2 py-0.5 bg-[#1F2937] text-[#9CA3AF] text-[11px] rounded uppercase tracking-wide">
-                {user.role}
-              </span>
-            </div>
-          )}
+          {/* User ID + Role badges (read-only) */}
+          <div className="flex items-center gap-4">
+            {user?.id != null && (
+              <div className="flex items-center gap-2">
+                <span className="text-[#9CA3AF] text-xs uppercase tracking-wide">User ID</span>
+                <span className="px-2 py-0.5 bg-[#1F2937] text-[#6B7280] text-[11px] rounded font-mono">
+                  #{user.id}
+                </span>
+              </div>
+            )}
+            {user?.role && (
+              <div className="flex items-center gap-2">
+                <span className="text-[#9CA3AF] text-xs uppercase tracking-wide">Role</span>
+                <span className="px-2 py-0.5 bg-[#1F2937] text-[#9CA3AF] text-[11px] rounded uppercase tracking-wide">
+                  {user.role}
+                </span>
+              </div>
+            )}
+          </div>
 
           <div className="flex flex-col gap-1.5">
             <label className="text-[#9CA3AF] text-xs uppercase tracking-wide">Full Name</label>
