@@ -148,6 +148,24 @@ async def startup_event():
     """Run database checks on startup"""
     ensure_database_ready()
 
+    # One-shot migration: email verification is disabled.
+    # Mark every unverified account as verified so existing users can log in.
+    try:
+        conn = mysql.connector.connect(
+            host=DB_HOST, port=DB_PORT,
+            user=DB_USER, password=DB_PASSWORD, database=DB_NAME,
+        )
+        cursor = conn.cursor()
+        cursor.execute("UPDATE users SET email_verified = 1 WHERE email_verified = 0")
+        rows = cursor.rowcount
+        conn.commit()
+        cursor.close()
+        conn.close()
+        if rows:
+            logger.info(f"[DATABASE] Auto-verified {rows} existing account(s) (email verification disabled)")
+    except Exception as e:
+        logger.warning(f"[DATABASE] Could not run email_verified migration: {e}")
+
 # Initialize database connection
 try:
     db.initialize(

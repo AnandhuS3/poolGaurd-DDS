@@ -339,13 +339,7 @@ class AuthService:
                 detail="Account is deactivated"
             )
 
-        # Check email verification
-        if not user.get('email_verified', True):  # default True for legacy rows
-            AuditLog.log("LOGIN_FAILED", user['id'], "Email not verified", ip_address)
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Please verify your email address before logging in. Check your inbox for the verification link."
-            )
+        # Email verification is disabled — all accounts are allowed to log in.
         
         # Verify password
         if not PasswordHasher.verify_password(password, user['password_hash']):
