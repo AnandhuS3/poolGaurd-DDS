@@ -13,11 +13,19 @@ from pydantic import BaseModel, EmailStr, validator
 import logging
 
 from core.database import db, User, Session, AuditLog
+from core.credentials import JWT_SECRET_KEY as _JWT_SECRET_FROM_ENV
 
 logger = logging.getLogger(__name__)
 
-# JWT Configuration
-JWT_SECRET_KEY = "your-secret-key-change-in-production-use-env-variable"  # TODO: Move to environment variable
+# JWT Configuration — loaded from .env via credentials.py
+# Fallback is intentionally weak to force a proper key in production.
+_FALLBACK_KEY = "INSECURE-FALLBACK-KEY-SET-JWT_SECRET_KEY-IN-ENV"
+JWT_SECRET_KEY = _JWT_SECRET_FROM_ENV if _JWT_SECRET_FROM_ENV else _FALLBACK_KEY
+if JWT_SECRET_KEY == _FALLBACK_KEY:
+    logger.warning(
+        "[SECURITY] JWT_SECRET_KEY not set in .env — using insecure fallback. "
+        "Generate one with: python -c \"import secrets; print(secrets.token_hex(64))\""
+    )
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_HOURS = 8  # Access token expires in 8 hours
 

@@ -30,6 +30,8 @@ CREATE TABLE IF NOT EXISTS users (
     -- Password reset
     password_reset_token VARCHAR(255) NULL,
     password_reset_expiry DATETIME NULL,
+    -- Mobile push notifications (FCM device token)
+    fcm_token VARCHAR(255) NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     

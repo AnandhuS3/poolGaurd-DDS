@@ -27,6 +27,7 @@ from core.auth import (
 from core.notifications import initialize_database, NotificationService
 from core import config as app_config
 from core.paths import UPLOADS_DIR, OUTPUT_DIR, SOUNDS_DIR, get_schema_path_str, ensure_directories, FRONTEND_DIR
+from core.credentials import ALLOWED_ORIGINS
 # Import config
 try:
     from config import (
@@ -167,10 +168,10 @@ except Exception as e:
 # Create notification service for welcome emails
 notification_service = NotificationService(app_config, use_database=True)
 
-# CORS middleware to allow browser access
+# CORS middleware — origins controlled via ALLOWED_ORIGINS in .env
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -496,6 +497,85 @@ async def list_alerts(
     """Get all alerts (Admin only)"""
     alerts = Alert.get_recent(limit)
     return alerts
+
+
+# ============================================================================
+# MOBILE CLIENT ENDPOINTS (Protected - Guard/Admin)
+# ============================================================================
+
+class DeviceRegistration(BaseModel):
+    fcm_token: str
+
+@app.post("/api/devices/register", status_code=204)
+async def register_device(
+    body: DeviceRegistration,
+    current_user: dict = Depends(require_guard_or_admin)
+):
+    """Register or update FCM device token for push notifications."""
+    user_id = current_user["id"]
+    query = "UPDATE users SET fcm_token = %s WHERE id = %s"
+    try:
+        db.execute_query(query, (body.fcm_token, user_id), fetch=False)
+        logger.info(f"[MOBILE] FCM token registered for user {user_id}")
+    except Exception as e:
+        logger.error(f"[MOBILE] Failed to register device token: {e}")
+        raise HTTPException(status_code=500, detail="Failed to register device token.")
+
+
+@app.get("/api/alerts/active")
+async def get_active_alerts(
+    current_user: dict = Depends(require_guard_or_admin)
+):
+    """Return unresolved alerts for the mobile client.
+
+    Maps the DB schema onto the AlertModel fields expected by the Flutter app:
+      alert_id, track_id, state, duration, confidence, camera_id, timestamp, acknowledged
+    """
+    query = """
+        SELECT
+            id            AS alert_id,
+            track_id,
+            alert_type    AS state,
+            camera_name   AS camera_id,
+            triggered_at  AS timestamp,
+            resolved_at
+        FROM alerts
+        WHERE resolved_at IS NULL
+        ORDER BY triggered_at DESC
+        LIMIT 100
+    """
+    rows = db.execute_query(query)
+    result = []
+    for row in rows:
+        result.append({
+            "alert_id":     row["alert_id"],
+            "track_id":     row["track_id"],
+            "state":        row["state"],          # 'warning' | 'danger'
+            "duration":     0.0,                   # not persisted separately
+            "confidence":   None,
+            "camera_id":    row["camera_id"] or "main",
+            "timestamp":    row["timestamp"].isoformat() if row.get("timestamp") else None,
+            "acknowledged": False,
+        })
+    return result
+
+
+@app.post("/api/alerts/{alert_id}/acknowledge")
+async def acknowledge_alert(
+    alert_id: int,
+    current_user: dict = Depends(require_guard_or_admin)
+):
+    """Resolve an alert (set resolved_at). Used by the mobile guard client."""
+    resolved = Alert.resolve(alert_id)
+    if not resolved:
+        raise HTTPException(status_code=404, detail=f"Alert {alert_id} not found or already resolved.")
+    AuditLog.log(
+        action="ALERT_ACKNOWLEDGED",
+        user_id=current_user["id"],
+        details=f"Alert {alert_id} acknowledged via mobile client",
+    )
+    logger.info(f"[MOBILE] Alert {alert_id} acknowledged by user {current_user['id']}")
+    return {"detail": "Alert acknowledged."}
 
 
 # ============================================================================

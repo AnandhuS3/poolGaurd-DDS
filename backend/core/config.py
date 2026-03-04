@@ -14,7 +14,8 @@ from core.credentials import (
     DB_USER, DB_PASSWORD,
     SMTP_USERNAME, SMTP_PASSWORD,
     NOTIFICATION_RECIPIENTS,
-    APP_BASE_URL
+    APP_BASE_URL,
+    ALLOWED_ORIGINS,
 )
 
 # ============================================================================
@@ -40,9 +41,9 @@ DB_POOL_SIZE = 5  # Connection pool size
 # ============================================================================
 # SERVER SETTINGS
 # ============================================================================
-HOST = "0.0.0.0"
-PORT = 8000
-DEBUG = True
+HOST = os.getenv("HOST", "0.0.0.0")
+PORT = int(os.getenv("PORT", "8000"))
+DEBUG = os.getenv("DEBUG", "false").lower() in ("1", "true", "yes")
 
 # Legacy compatibility
 SERVER_HOST = HOST

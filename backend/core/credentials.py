@@ -38,6 +38,20 @@ SMTP_PASSWORD = os.getenv('SMTP_PASSWORD', '')
 APP_BASE_URL = os.getenv('APP_BASE_URL', 'http://localhost:5173')
 
 # ============================================================================
+# SECURITY / JWT
+# ============================================================================
+# Generate a strong secret with: python -c "import secrets; print(secrets.token_hex(64))"
+JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY', '')
+
+# ============================================================================
+# CORS
+# ============================================================================
+# Comma-separated list of allowed frontend origins
+# Example: http://localhost:5173,https://your-domain.com
+_origins_str = os.getenv('ALLOWED_ORIGINS', 'http://localhost:5173')
+ALLOWED_ORIGINS = [o.strip() for o in _origins_str.split(',') if o.strip()]
+
+# ============================================================================
 # NOTIFICATION RECIPIENTS
 # ============================================================================
 # Comma-separated list of email addresses or phone numbers
@@ -60,7 +74,11 @@ def validate_credentials():
         warnings.append("[WARNING] DB_USER not set in .env file")
     if not DB_PASSWORD:
         warnings.append("[WARNING] DB_PASSWORD not set in .env file (using empty password)")
-    
+
+    # JWT secret (critical)
+    if not JWT_SECRET_KEY:
+        warnings.append("[CRITICAL] JWT_SECRET_KEY not set - using insecure fallback! Set this in .env")
+
     # Email credentials (optional but recommended)
     if not SMTP_USERNAME:
         warnings.append("[WARNING] SMTP_USERNAME not set - email notifications disabled")

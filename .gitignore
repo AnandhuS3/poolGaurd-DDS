@@ -72,7 +72,8 @@ assets/weights/*.pt
 assets/weights/*.pth
 assets/weights/*.onnx
 assets/weights/*.weights
-assets/weights/behavior/
+assets/weights/behavior/*
+!assets/weights/behavior/.gitkeep
 !assets/weights/.gitkeep
 models/*.pt
 models/*.pth
@@ -86,14 +87,12 @@ models/*.onnx
 *.mkv
 *.flv
 *.wmv
-backend/tests/videos/
+backend/tests/videos/*
+!backend/tests/videos/.gitkeep
 
 # Audio files
-assets/sounds/
-*.wav
-*.mp3
-*.ogg
-*.aac
+assets/sounds/*
+!assets/sounds/.gitkeep
 
 # Image files (if you want to ignore them)
 # *.jpg
@@ -116,9 +115,13 @@ $RECYCLE.BIN/
 
 # Node / Frontend
 node_modules/
+frontend/node_modules/
 frontend/dist/
 frontend/dist-ssr/
 frontend/.vite/
+frontend/.env
+frontend/.env.local
+frontend/.env.*.local
 
 # Testing
 .pytest_cache/
@@ -156,3 +159,20 @@ backend/core/credentials.py
 
 # Staging / scratch folders
 Both/
+
+# ============================================================================
+# MOBILE (Flutter)
+# ============================================================================
+# Firebase config files contain real API keys — never commit
+mobile/android/app/google-services.json
+mobile/ios/Runner/GoogleService-Info.plist
+# Local machine-specific Android SDK/Flutter paths
+mobile/android/local.properties
+# Flutter generated / build artefacts
+mobile/build/
+mobile/.dart_tool/
+mobile/.flutter-plugins
+mobile/.flutter-plugins-dependencies
+mobile/pubspec.lock
+mobile/**/GeneratedPluginRegistrant.*
+mobile/flutter_export_environment.sh
