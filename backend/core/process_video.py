@@ -78,15 +78,13 @@ def validate_config():
     """Validate configuration parameters at startup"""
     errors = []
     
-    # Model paths — missing weights are a WARNING not a hard error.
-    # On Railway the .pt files are gitignored and must be provided separately;
-    # we don't want the server to refuse to start just because a video-only
-    # feature is unavailable.
+    # Model paths
     if not os.path.exists(MODEL_PATH):
-        logger.warning(f"[MODEL] Primary model not found: {MODEL_PATH} — video analysis will be unavailable until the file is present")
+        errors.append(f"Primary model not found: {MODEL_PATH}")
     
     if USE_ENSEMBLE and not os.path.exists(MODEL_PATH_SECONDARY):
-        logger.warning(f"[MODEL] Secondary model not found: {MODEL_PATH_SECONDARY} — ensemble disabled")
+        print(f"⚠️  Warning: Ensemble enabled but secondary model not found: {MODEL_PATH_SECONDARY}")
+        print("    Continuing with single model")
     
     # Detection parameters
     if not 0.0 <= CONFIDENCE_THRESHOLD <= 1.0:
@@ -123,54 +121,38 @@ def validate_config():
     
     logger.info("[OK] Configuration validated successfully")
 
-# Run validation at import time (non-fatal — missing weights are only a warning)
+# Run validation before loading models
+validate_config()
+
+# Load YOLO models - ensemble for better accuracy
+# Load model with GPU acceleration
 try:
-    validate_config()
-except ValueError as _cfg_err:
-    logger.warning(f"[CONFIG] Validation warning at import: {_cfg_err}")
+    model = YOLO(MODEL_PATH)
+    # Explicitly set device to GPU if available
+    if hasattr(model, 'device'):
+        model.to('cuda' if __import__('torch').cuda.is_available() else 'cpu')
+    logger.info(f"[OK] Loaded primary model: {MODEL_PATH}")
+    logger.info(f"[OK] Using device: {'cuda' if __import__('torch').cuda.is_available() else 'cpu'}")
+except Exception as e:
+    logger.error(f"Failed to load model: {e}")
+    raise
 
-# ── Lazy model loading ────────────────────────────────────────────────────────
-# Models are NOT loaded at import time because:
-#   1. The .pt weight files are gitignored and not present on Railway.
-#   2. Loading torch/YOLO at startup consumes ~1 GB RAM and crashes small dynos.
-# Models are loaded on the FIRST call to process_video_realtime().
-# Auth, dashboard, and all other routes continue to work without the weights.
-model = None
+# Load secondary model if ensemble is enabled
 model_secondary = None
-_models_loaded = False
-
-
-def _load_models():
-    """Load YOLO models lazily on first video-processing request."""
-    global model, model_secondary, _models_loaded
-    if _models_loaded:
-        return
-    _models_loaded = True  # set early so concurrent callers don't double-load
-    _device = 'cuda' if __import__('torch').cuda.is_available() else 'cpu'
-
-    if os.path.exists(MODEL_PATH):
-        try:
-            model = YOLO(MODEL_PATH)
-            if hasattr(model, 'to'):
-                model.to(_device)
-            logger.info(f"[MODEL] Loaded primary model: {MODEL_PATH} on {_device}")
-        except Exception as e:
-            logger.error(f"[MODEL] Failed to load primary model: {e}")
-            model = None
-    else:
-        logger.warning(f"[MODEL] Primary model not found: {MODEL_PATH} — YOLO detection unavailable")
-
-    if USE_ENSEMBLE and os.path.exists(MODEL_PATH_SECONDARY):
-        try:
-            model_secondary = YOLO(MODEL_PATH_SECONDARY)
-            if hasattr(model_secondary, 'to'):
-                model_secondary.to(_device)
-            logger.info(f"[MODEL] Loaded secondary model: {MODEL_PATH_SECONDARY} (ensemble enabled)")
-        except Exception as e:
-            logger.warning(f"[MODEL] Failed to load secondary model: {e} — ensemble disabled")
-            model_secondary = None
-    elif USE_ENSEMBLE:
-        logger.warning(f"[MODEL] Secondary model not found: {MODEL_PATH_SECONDARY} — ensemble disabled")
+if USE_ENSEMBLE and os.path.exists(MODEL_PATH_SECONDARY):
+    try:
+        model_secondary = YOLO(MODEL_PATH_SECONDARY)
+        if hasattr(model_secondary, 'device'):
+            model_secondary.to('cuda' if __import__('torch').cuda.is_available() else 'cpu')
+        logger.info(f"[OK] Loaded secondary model: {MODEL_PATH_SECONDARY}")
+        print("[OK] Ensemble detection enabled (using both models for higher accuracy)")
+    except Exception as e:
+        print(f"[WARNING] Failed to load secondary model: {e}")
+        print("[INFO] Continuing with single model")
+elif not USE_ENSEMBLE:
+    print("[INFO] Ensemble mode disabled in config")
+else:
+    logger.warning(f"[WARNING] Secondary model not found: {MODEL_PATH_SECONDARY}. Using single model.")
 
 # NOTE: DeepSORT tracker is created inside process_video_realtime() per session.
 # Module-level tracker was removed to prevent track-ID contamination across sessions.
@@ -264,15 +246,6 @@ else:
 
 async def process_video_realtime(video_path, websocket):
     """Process video with real-time streaming via WebSocket - UPGRADED"""
-    # Ensure YOLO models are loaded (no-op after first call)
-    _load_models()
-    if model is None:
-        await websocket.send_json({
-            "type": "error",
-            "message": "Detection model not available on this server. Upload the weight files to assets/weights/."
-        })
-        return
-
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         await websocket.send_json({

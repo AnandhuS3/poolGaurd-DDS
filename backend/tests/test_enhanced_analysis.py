@@ -26,7 +26,7 @@ from deep_sort_realtime.deepsort_tracker import DeepSort
 # Configuration
 VIDEO_PATH = "test_video.mp4"
 OUTPUT_PATH = "output_enhanced_analysis.mp4"
-DISPLAY_WINDOW = False  # Headless by default (no libGL needed); pass --display to enable locally
+DISPLAY_WINDOW = True
 SAVE_OUTPUT = True
 
 # Model paths
@@ -552,8 +552,8 @@ if __name__ == "__main__":
                        help='Path to input video file')
     parser.add_argument('--output', type=str, default=OUTPUT_PATH,
                        help='Path to output video file')
-    parser.add_argument('--display', action='store_true',
-                       help='Enable live display window (requires a local GUI / X server)')
+    parser.add_argument('--no-display', action='store_true',
+                       help='Disable live display window')
     parser.add_argument('--no-save', action='store_true',
                        help='Do not save output video')
     
@@ -561,7 +561,7 @@ if __name__ == "__main__":
     
     VIDEO_PATH = args.video
     OUTPUT_PATH = args.output
-    DISPLAY_WINDOW = args.display
+    DISPLAY_WINDOW = not args.no_display
     SAVE_OUTPUT = not args.no_save
     
     analyze_video(VIDEO_PATH)

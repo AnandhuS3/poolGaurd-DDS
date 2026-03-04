@@ -1,8 +1,8 @@
 /**
  * Register.tsx
  * Public registration page — POST /api/auth/register
- * On success (201 Created) the account is immediately active.
- * We show a "success" screen with a link to sign in.
+ * On success the backend sends a verification email (202 Accepted).
+ * We show a "check your inbox" screen — no auto-login.
  */
 
 import { useState, type FormEvent } from 'react';
@@ -43,40 +43,6 @@ const COUNTRY_CODES = [
   { code: '+90',  flag: '🇹🇷', name: 'Turkey' },
 ] as const;
 
-// Maximum local subscriber digits (without country code or leading zeros) per dial code.
-// Used both for input capping and validation.
-const PHONE_MAX_DIGITS: Record<string, number> = {
-  '+91':  10, // India
-  '+1':   10, // USA / Canada
-  '+44':  10, // UK
-  '+61':   9, // Australia
-  '+971':  9, // UAE
-  '+966':  9, // Saudi Arabia
-  '+974':  8, // Qatar
-  '+65':   8, // Singapore
-  '+60':  10, // Malaysia (up to 10)
-  '+49':  11, // Germany (variable, up to 11)
-  '+33':   9, // France
-  '+39':  10, // Italy
-  '+34':   9, // Spain
-  '+31':   9, // Netherlands
-  '+7':   10, // Russia
-  '+86':  11, // China
-  '+81':  10, // Japan
-  '+82':  10, // South Korea
-  '+55':  11, // Brazil (11 with mobile 9-prefix)
-  '+52':  10, // Mexico
-  '+27':   9, // South Africa
-  '+20':  10, // Egypt
-  '+234': 10, // Nigeria
-  '+254':  9, // Kenya
-  '+92':  10, // Pakistan
-  '+880': 10, // Bangladesh
-  '+94':   9, // Sri Lanka
-  '+977': 10, // Nepal
-  '+90':  10, // Turkey
-};
-
 function passwordStrength(pw: string): { score: number; label: string; color: string } {
   let score = 0;
   if (pw.length >= 8) score++;
@@ -104,15 +70,12 @@ export function Register() {
   const [localNumber, setLocalNumber] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  const [registered, setRegistered] = useState(false); // set after successful registration
+  const [pendingEmail, setPendingEmail] = useState(''); // set after successful registration
 
   const strength = passwordStrength(form.password);
 
   const set = (field: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm((prev) => ({ ...prev, [field]: e.target.value }));
-
-  // Max digits allowed for the currently selected country
-  const maxDigits = PHONE_MAX_DIGITS[dialCode] ?? 15;
 
   // Combine dial code + local number into E.164-style string
   const fullPhone = localNumber.trim()
@@ -127,11 +90,6 @@ export function Register() {
     if (!/[A-Z]/.test(form.password)) return 'Password must contain at least one uppercase letter.';
     if (!/[0-9]/.test(form.password)) return 'Password must contain at least one digit.';
     if (form.password !== form.confirm) return 'Passwords do not match.';
-    if (localNumber.trim()) {
-      const digits = localNumber.replace(/\D/g, '');
-      if (digits.length !== maxDigits)
-        return `Phone number must be exactly ${maxDigits} digits for ${dialCode}.`;
-    }
     return '';
   };
 
@@ -150,8 +108,8 @@ export function Register() {
         password: form.password,
       });
 
-      // 201 Created — account is immediately active
-      setRegistered(true);
+      // 202 Accepted — account created but not yet verified
+      setPendingEmail(form.email);
     } catch (err: unknown) {
       const msg = axios.isAxiosError(err)
         ? (err.response?.data?.detail as string) ?? 'Registration failed'
@@ -163,9 +121,9 @@ export function Register() {
   };
 
   // -----------------------------------------------------------------------
-  // Success screen — account is immediately active, direct user to login
+  // "Check your inbox" screen
   // -----------------------------------------------------------------------
-  if (registered) {
+  if (pendingEmail) {
     return (
       <div className="min-h-screen bg-[#0B0F19] flex items-center justify-center p-4">
         <div className="w-full max-w-sm text-center space-y-6">
@@ -175,19 +133,33 @@ export function Register() {
           </div>
 
           <div className="bg-[#121212] border border-[#1F2937] rounded p-8 flex flex-col items-center gap-4">
-            <div className="text-5xl">✅</div>
-            <h2 className="text-white font-semibold text-lg">Account Created!</h2>
+            <div className="text-5xl">📧</div>
+            <h2 className="text-white font-semibold text-lg">Check your inbox</h2>
             <p className="text-[#9CA3AF] text-sm leading-relaxed">
-              Your account has been created successfully.<br />
-              You can sign in right away.
+              We sent a verification link to{' '}
+              <span className="text-[#3B82F6] font-medium">{pendingEmail}</span>.
+              <br />
+              Click the link in the email to activate your account. The link expires in 30&nbsp;minutes.
             </p>
-            <Link
-              to="/login"
-              className="mt-2 w-full bg-[#3B82F6] hover:bg-[#2563EB] text-white text-sm font-semibold py-2.5 rounded transition-colors text-center"
-            >
-              Sign In
-            </Link>
+            <p className="text-[#6B7280] text-xs">
+              Didn't receive it? Check your spam folder or{' '}
+              <button
+                type="button"
+                className="text-[#3B82F6] hover:underline"
+                onClick={() => setPendingEmail('')}
+              >
+                try registering again
+              </button>
+              .
+            </p>
           </div>
+
+          <p className="text-[#6B7280] text-xs">
+            Already verified?{' '}
+            <Link to="/login" className="text-[#3B82F6] hover:underline">
+              Sign in
+            </Link>
+          </p>
         </div>
       </div>
     );
@@ -251,7 +223,7 @@ export function Register() {
             <div className="flex gap-2">
               <select
                 value={dialCode}
-                onChange={(e) => { setDialCode(e.target.value); setLocalNumber(''); }}
+                onChange={(e) => setDialCode(e.target.value)}
                 className="bg-[#0B0F19] border border-[#1F2937] text-white text-sm rounded px-2 py-2 focus:outline-none focus:border-[#3B82F6] transition-colors cursor-pointer appearance-none pr-6"
                 style={{ minWidth: '5.5rem', backgroundImage: 'none' }}
               >
@@ -264,15 +236,9 @@ export function Register() {
               <input
                 type="tel"
                 value={localNumber}
-                onChange={(e) => {
-                  // Allow only digits, strip leading zeros, cap at country max
-                  const digits = e.target.value.replace(/\D/g, '').slice(0, maxDigits);
-                  setLocalNumber(digits);
-                }}
-                maxLength={maxDigits}
-                inputMode="numeric"
+                onChange={(e) => setLocalNumber(e.target.value)}
                 className="flex-1 bg-[#0B0F19] border border-[#1F2937] text-white text-sm rounded px-3 py-2 focus:outline-none focus:border-[#3B82F6] transition-colors"
-                placeholder={`${'0'.repeat(maxDigits)} (${maxDigits} digits)`}
+                placeholder="9876543210"
               />
             </div>
           </div>
