@@ -20,22 +20,10 @@ export function setLogoutHandler(fn: () => void) {
   _onUnauthorized = fn;
 }
 
-// Resolve the backend base URL:
-//   1. VITE_API_URL env var — set this in Railway frontend service variables (takes priority)
-//   2. If running on *.railway.app (production) but the env var wasn't set, fall back to the
-//      known Railway backend URL so the app works without any dashboard configuration.
-//   3. Otherwise ('/' — localhost dev) let the Vite proxy route /api → localhost:8000.
-const _railwayBackend = 'https://backend-production-d7e4c.up.railway.app';
-const _isRailway =
-  typeof window !== 'undefined' &&
-  window.location.hostname !== 'localhost' &&
-  window.location.hostname !== '127.0.0.1';
-const _baseURL: string =
-  (import.meta.env.VITE_API_URL as string | undefined) ||
-  (_isRailway ? _railwayBackend : '/');
-
 const api: AxiosInstance = axios.create({
-  baseURL: _baseURL,
+  // In dev: '/' keeps relative URLs so the Vite proxy handles routing.
+  // In production (Railway): VITE_API_URL = 'https://your-backend.railway.app'
+  baseURL: import.meta.env.VITE_API_URL ?? '/',
   headers: { 'Content-Type': 'application/json' },
 });
 
