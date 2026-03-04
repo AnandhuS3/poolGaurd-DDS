@@ -6,7 +6,7 @@
 #   e.g. https://your-backend.up.railway.app
 
 [build]
-buildCommand = "npm ci && npm run build"
+buildCommand = "npm install && npm run build"
 
 [deploy]
 startCommand = "npm run start"
