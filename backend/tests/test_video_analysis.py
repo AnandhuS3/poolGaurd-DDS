@@ -20,7 +20,7 @@ from ultralytics import YOLO
 # Configuration
 VIDEO_PATH = "test_video.mp4"  # Change this to your video path
 OUTPUT_PATH = "output_analysis.mp4"  # Output video with annotations
-DISPLAY_WINDOW = True  # Show live preview
+DISPLAY_WINDOW = False  # Headless by default (no libGL needed); pass --display to enable locally
 SAVE_OUTPUT = True  # Save annotated video
 
 # Model paths
@@ -441,8 +441,8 @@ if __name__ == "__main__":
                        help='Path to input video file')
     parser.add_argument('--output', type=str, default=OUTPUT_PATH,
                        help='Path to output video file')
-    parser.add_argument('--no-display', action='store_true',
-                       help='Disable live display window')
+    parser.add_argument('--display', action='store_true',
+                       help='Enable live display window (requires a local GUI / X server)')
     parser.add_argument('--no-save', action='store_true',
                        help='Do not save output video')
     
@@ -450,7 +450,7 @@ if __name__ == "__main__":
     
     VIDEO_PATH = args.video
     OUTPUT_PATH = args.output
-    DISPLAY_WINDOW = not args.no_display
+    DISPLAY_WINDOW = args.display
     SAVE_OUTPUT = not args.no_save
     
     analyze_video(VIDEO_PATH)
