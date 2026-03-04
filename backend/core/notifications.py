@@ -598,7 +598,7 @@ Check camera feed and respond immediately if assistance needed.
                             </div>
                             
                             <div style="text-align: center; margin: 30px 0;">
-                                <a href="https://frontend-production-211f.up.railway.app/login" 
+                                <a href="http://localhost:8000/login.html" 
                                    style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
                                           color: white; 
                                           padding: 12px 30px; 

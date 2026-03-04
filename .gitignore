@@ -145,14 +145,17 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-# Credentials and sensitive data — actual secret values only
+# Credentials and sensitive data
 credentials.json
 secrets.json
 *.key
 *.pem
 *.crt
-# NOTE: backend/core/credentials.py is safe to commit — it only reads from .env
-# NOTE: backend/config/.env is ignored above (line ~44)
+
+# Project specific
+config/credentials.py
+core/credentials.py
+backend/core/credentials.py
 
 # Staging / scratch folders
 Both/

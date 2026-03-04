@@ -12,7 +12,6 @@ from pathlib import Path
 # This keeps sensitive data separate and secure
 from core.credentials import (
     DB_USER, DB_PASSWORD,
-    DB_HOST as _DB_HOST, DB_PORT as _DB_PORT, DB_NAME as _DB_NAME,
     SMTP_USERNAME, SMTP_PASSWORD,
     NOTIFICATION_RECIPIENTS,
     APP_BASE_URL,
@@ -33,11 +32,11 @@ FRONTEND_DIR = BASE_DIR / "frontend"
 # DATABASE CONFIGURATION
 # ============================================================================
 # MySQL database settings for authentication and alerting
-# Loaded from .env (or Railway plugin env vars) via credentials.py
-DB_HOST = _DB_HOST
-DB_PORT = _DB_PORT
-DB_NAME = _DB_NAME
-DB_POOL_SIZE = int(os.getenv('DB_POOL_SIZE', '5'))
+# DB_USER and DB_PASSWORD imported from credentials.py
+DB_HOST = "localhost"
+DB_PORT = 3306
+DB_NAME = "drowning_detection_db"
+DB_POOL_SIZE = 5  # Connection pool size
 
 # ============================================================================
 # SERVER SETTINGS

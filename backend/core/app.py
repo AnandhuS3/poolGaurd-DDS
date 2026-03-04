@@ -148,24 +148,6 @@ async def startup_event():
     """Run database checks on startup"""
     ensure_database_ready()
 
-    # One-shot migration: email verification is disabled.
-    # Mark every unverified account as verified so existing users can log in.
-    try:
-        conn = mysql.connector.connect(
-            host=DB_HOST, port=DB_PORT,
-            user=DB_USER, password=DB_PASSWORD, database=DB_NAME,
-        )
-        cursor = conn.cursor()
-        cursor.execute("UPDATE users SET email_verified = 1 WHERE email_verified = 0")
-        rows = cursor.rowcount
-        conn.commit()
-        cursor.close()
-        conn.close()
-        if rows:
-            logger.info(f"[DATABASE] Auto-verified {rows} existing account(s) (email verification disabled)")
-    except Exception as e:
-        logger.warning(f"[DATABASE] Could not run email_verified migration: {e}")
-
 # Initialize database connection
 try:
     db.initialize(
@@ -225,13 +207,14 @@ async def login(credentials: LoginRequest, request: Request):
     }
 
 
-@app.post("/api/auth/register", status_code=201)
+@app.post("/api/auth/register", status_code=202)
 async def register(user_data: RegisterRequest, request: Request):
     """
     Public user registration.
-    Creates an immediately-active account (email verification is disabled).
-    Returns 201 Created — the client can redirect the user straight to login.
+    Creates an unverified account and sends an email verification link.
+    Returns 202 Accepted — the client should prompt the user to check their inbox.
     """
+    # Register without activating; returns verification_token for unverified accounts
     user_info = AuthService.register_user(
         name=user_data.name,
         email=user_data.email,
@@ -240,10 +223,29 @@ async def register(user_data: RegisterRequest, request: Request):
         role='guard',
         created_by=None,
     )
-    user_info.pop("verification_token", None)  # not generated, but be safe
+
+    verification_token = user_info.pop("verification_token", None)
+
+    if verification_token:
+        # Build the verification URL pointing to the frontend route
+        base_url = getattr(app_config, "APP_BASE_URL", "http://localhost:5173")
+        verification_url = f"{base_url}/verify-email?token={verification_token}"
+
+        # Send verification email (non-blocking)
+        try:
+            asyncio.create_task(
+                asyncio.to_thread(
+                    notification_service.send_verification_email,
+                    user_data.name,
+                    user_data.email,
+                    verification_url,
+                )
+            )
+        except Exception as e:
+            logger.error(f"[REGISTRATION] Failed to queue verification email: {e}")
 
     return {
-        "message": "Account created successfully. You can now sign in.",
+        "message": "Registration successful. Please check your email to verify your account before logging in.",
         "email": user_data.email,
     }
 
@@ -282,7 +284,7 @@ async def forgot_password(body: ForgotPasswordRequest, request: Request):
 
     if reset_token:
         user = __import__('core.database', fromlist=['User']).User.get_by_email(body.email)
-        base_url = getattr(app_config, "APP_BASE_URL", "https://frontend-production-211f.up.railway.app")
+        base_url = getattr(app_config, "APP_BASE_URL", "http://localhost:5173")
         reset_url = f"{base_url}/reset-password?token={reset_token}"
 
         try:
@@ -818,35 +820,20 @@ async def stream_video(filename: str, request: Request):
 # ============================================================================
 # These must be defined BEFORE the StaticFiles mount to take precedence
 
-# ============================================================================
-# HEALTH CHECK ENDPOINTS
-# ============================================================================
+@app.get("/login")
+async def login_redirect():
+    """Redirect /login to /login.html"""
+    return RedirectResponse(url="/login.html", status_code=302)
 
-@app.get("/health")
-async def health_check():
-    """Liveness probe — Railway and load balancers use this to verify the
-    container is accepting HTTP requests."""
-    return {"status": "ok", "service": "PoolGuard API"}
+@app.get("/register")
+async def register_redirect():
+    """Redirect /register to /register.html"""
+    return RedirectResponse(url="/register.html", status_code=302)
 
-
-@app.get("/db-test")
-async def db_test():
-    """Connectivity probe — verifies the backend can reach MySQL."""
-    try:
-        result = db.execute_query("SELECT 1 AS ping")
-        return {"status": "ok", "db": "connected", "result": result}
-    except Exception as exc:
-        return JSONResponse(
-            status_code=503,
-            content={"status": "error", "db": "unreachable", "detail": str(exc)},
-        )
-
-
-# ============================================================================
-# FRONTEND PAGE ROUTES  (legacy / local-dev only — not used in Railway)
-# ============================================================================
-# These redirect to .html files that only exist when the legacy frontend_legacy/
-# is served.  Skip them silently when the files are absent (Railway backend-only).
+@app.get("/admin")
+async def admin_redirect():
+    """Redirect /admin to /admin.html"""
+    return RedirectResponse(url="/admin.html", status_code=302)
 
 # Mount uploads folder to serve videos
 app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
@@ -854,15 +841,9 @@ app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
 # Mount sounds folder to serve alarm audio
 app.mount("/sounds", StaticFiles(directory=str(SOUNDS_DIR)), name="sounds")
 
-# Mount the legacy/built frontend only when the directory actually contains
-# HTML files.  On Railway the frontend is deployed as its own separate service
-# (frontend-production-211f.up.railway.app) and this directory is absent,
-# so we skip the mount to avoid a startup crash.
-if FRONTEND_DIR.exists() and any(FRONTEND_DIR.glob("*.html")):
-    app.mount("/", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="static")
-    logger.info(f"[STATIC] Serving legacy frontend from {FRONTEND_DIR}")
-else:
-    logger.info("[STATIC] No local frontend directory found — static file mount skipped (Railway mode)")
+# Mount frontend folder to serve HTML - MUST BE LAST
+# Note: This serves index.html and other static HTML files from frontend/
+app.mount("/", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="static")
 
 if __name__ == "__main__":
     print("=" * 60)

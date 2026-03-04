@@ -132,10 +132,8 @@ class RegisterRequest(BaseModel):
 
     @validator('email')
     def validate_email_domain(cls, v):
-        """Reject known disposable domains. DNS MX check is skipped (no outbound mail)."""
-        domain = str(v).split('@')[-1].lower()
-        if domain in DISPOSABLE_EMAIL_DOMAINS:
-            raise ValueError(f'Disposable/temporary email addresses are not allowed ({domain}).')
+        """Reject disposable domains and domains without MX records."""
+        _validate_email_domain(str(v))
         return v
 
     @validator('phone_number')
@@ -341,8 +339,14 @@ class AuthService:
                 detail="Account is deactivated"
             )
 
-        # Email verification is disabled — all accounts are allowed to log in.
-        
+        # Check email verification
+        if not user.get('email_verified', True):  # default True for legacy rows
+            AuditLog.log("LOGIN_FAILED", user['id'], "Email not verified", ip_address)
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Please verify your email address before logging in. Check your inbox for the verification link."
+            )
+
         # Verify password
         if not PasswordHasher.verify_password(password, user['password_hash']):
             AuditLog.log("LOGIN_FAILED", user['id'], "Invalid password", ip_address)
@@ -404,11 +408,14 @@ class AuthService:
     def register_user(name: str, email: str, phone_number: Optional[str], password: str,
                       role: str = 'guard', created_by: Optional[int] = None) -> Dict:
         """
-        Register new user. All accounts are created pre-verified and immediately active.
-        Email verification is disabled.
+        Register new user.
+
+        * Public self-registration: account is created UNVERIFIED.
+          Caller must send a verification email with the returned token.
+        * Admin-created users: account is created pre-verified.
 
         Returns:
-            Dict with user info.
+            Dict with user info and (for unverified accounts) 'verification_token'.
 
         Raises:
             HTTPException: If user creation fails.
@@ -424,14 +431,16 @@ class AuthService:
         # Hash password
         password_hash = PasswordHasher.hash_password(password)
 
-        # All accounts are active immediately — email verification is disabled.
-        # (Admin-created accounts are also pre-verified.)
-        is_admin_created = created_by is not None  # kept for audit/logging intent
-        email_verified = True
+        # Self-registration requires email verification; admin-created users are pre-verified
+        is_admin_created = created_by is not None
+        email_verified = is_admin_created
 
-        # No verification token needed
+        # Generate verification token for self-registrations
         verification_token: Optional[str] = None
         verification_expiry: Optional[datetime] = None
+        if not email_verified:
+            verification_token = secrets.token_urlsafe(32)
+            verification_expiry = datetime.utcnow() + timedelta(minutes=VERIFICATION_TOKEN_MINUTES)
 
         # Create user
         user_id = User.create(
@@ -717,7 +726,12 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
             detail="Account is deactivated"
         )
 
-    # Email verification is disabled — skip the email_verified check.
+    if not user.get('email_verified', True):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Email address not verified"
+        )
+
     active_session = Session.get_active_session(user_id)
     if not active_session:
         raise HTTPException(

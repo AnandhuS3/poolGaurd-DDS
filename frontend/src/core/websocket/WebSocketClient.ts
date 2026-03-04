@@ -24,22 +24,7 @@ export type WsClientStatus =
   | 'disconnected'
   | 'error';
 
-// In dev, the Vite proxy forwards /ws to localhost:8000, so we
-// connect to the current page's host.
-// In production, VITE_API_URL = 'https://your-backend.railway.app', so
-// we swap the protocol to wss://.
-function resolveWsBase(): string {
-  const apiUrl = import.meta.env.VITE_API_URL as string | undefined;
-  if (apiUrl) {
-    // https://... → wss://...  |  http://... → ws://...
-    return apiUrl.replace(/^https/, 'wss').replace(/^http/, 'ws').replace(/\/$/, '');
-  }
-  // Dev: same origin, proxy handles it
-  const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-  return `${proto}://${window.location.host}`;
-}
-
-const BASE_URL = resolveWsBase();
+const BASE_URL = 'ws://localhost:8000';
 const WS_PATH = '/ws/process';
 const MAX_RETRIES = 8;
 const BASE_DELAY_MS = 1000;

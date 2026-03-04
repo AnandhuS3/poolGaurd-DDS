@@ -20,14 +20,8 @@ load_dotenv(dotenv_path=env_path)
 # ============================================================================
 # DATABASE CREDENTIALS
 # ============================================================================
-# Railway MySQL plugin injects MYSQLUSER / MYSQLHOST / MYSQLPASSWORD /
-# MYSQLDATABASE / MYSQLPORT automatically — we fall back to the Railway vars
-# if the generic ones are not set, so the same .env.example works everywhere.
-DB_USER     = os.getenv('DB_USER')     or os.getenv('MYSQLUSER',     'root')
-DB_PASSWORD = os.getenv('DB_PASSWORD') or os.getenv('MYSQLPASSWORD', '')
-DB_HOST     = os.getenv('DB_HOST')     or os.getenv('MYSQLHOST',     'localhost')
-DB_PORT     = int(os.getenv('DB_PORT') or os.getenv('MYSQLPORT',     '3306'))
-DB_NAME     = os.getenv('DB_NAME')     or os.getenv('MYSQLDATABASE', 'drowning_detection_db')
+DB_USER = os.getenv('DB_USER', 'root')
+DB_PASSWORD = os.getenv('DB_PASSWORD', '')
 
 # ============================================================================
 # EMAIL CREDENTIALS (SMTP)
@@ -40,9 +34,8 @@ SMTP_PASSWORD = os.getenv('SMTP_PASSWORD', '')
 # ============================================================================
 # APP CONFIGURATION
 # ============================================================================
-# Base URL used for verification and reset links in emails.
-# Falls back to the production Railway frontend when the env var is not set.
-APP_BASE_URL = os.getenv('APP_BASE_URL', 'https://frontend-production-211f.up.railway.app')
+# Base URL used for verification and reset links in emails
+APP_BASE_URL = os.getenv('APP_BASE_URL', 'http://localhost:5173')
 
 # ============================================================================
 # SECURITY / JWT
@@ -54,21 +47,9 @@ JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY', '')
 # CORS
 # ============================================================================
 # Comma-separated list of allowed frontend origins
-# Example: ALLOWED_ORIGINS=http://localhost:5173,https://your-frontend.up.railway.app
-# Convenience single-URL alias (Railway: set FRONTEND_URL on the backend service)
-# Default includes the production Railway frontend so CORS works even before the
-# ALLOWED_ORIGINS env var is configured on the Railway backend service.
-_origins_str = os.getenv(
-    'ALLOWED_ORIGINS',
-    'http://localhost:5173,https://frontend-production-211f.up.railway.app'
-)
+# Example: http://localhost:5173,https://your-domain.com
+_origins_str = os.getenv('ALLOWED_ORIGINS', 'http://localhost:5173')
 ALLOWED_ORIGINS = [o.strip() for o in _origins_str.split(',') if o.strip()]
-
-# FRONTEND_URL is a single-value convenience alias for Railway deployments.
-# If set and not already in the list, it is appended automatically.
-_frontend_url = os.getenv('FRONTEND_URL', '').strip().rstrip('/')
-if _frontend_url and _frontend_url not in ALLOWED_ORIGINS:
-    ALLOWED_ORIGINS.append(_frontend_url)
 
 # ============================================================================
 # NOTIFICATION RECIPIENTS

@@ -23,8 +23,8 @@ CREATE TABLE IF NOT EXISTS users (
     role ENUM('admin', 'guard') NOT NULL DEFAULT 'guard',
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     is_system_admin BOOLEAN NOT NULL DEFAULT FALSE,
-    -- Email verification (disabled; all accounts verified on creation)
-    email_verified BOOLEAN NOT NULL DEFAULT TRUE,
+    -- Email verification (added for hardened auth)
+    email_verified BOOLEAN NOT NULL DEFAULT FALSE,
     verification_token VARCHAR(255) NULL,
     verification_token_expiry DATETIME NULL,
     -- Password reset

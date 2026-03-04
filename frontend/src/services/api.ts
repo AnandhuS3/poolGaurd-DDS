@@ -21,9 +21,8 @@ export function setLogoutHandler(fn: () => void) {
 }
 
 const api: AxiosInstance = axios.create({
-  // In dev: '/' keeps relative URLs so the Vite proxy handles routing.
-  // In production (Railway): VITE_API_URL = 'https://your-backend.railway.app'
-  baseURL: import.meta.env.VITE_API_URL ?? '/',
+  // All paths go through Vite proxy → http://localhost:8000
+  baseURL: '/',
   headers: { 'Content-Type': 'application/json' },
 });
 
