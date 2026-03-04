@@ -31,8 +31,15 @@ const USER_KEY = 'dds_user';
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(() => {
-    const raw = localStorage.getItem(USER_KEY);
-    return raw ? (JSON.parse(raw) as AuthUser) : null;
+    try {
+      const raw = localStorage.getItem(USER_KEY);
+      // Guard against the literal string "undefined" stored by a previous bug
+      if (!raw || raw === 'undefined' || raw === 'null') return null;
+      return JSON.parse(raw) as AuthUser;
+    } catch {
+      localStorage.removeItem(USER_KEY);
+      return null;
+    }
   });
   const [token, setToken] = useState<string | null>(() => localStorage.getItem(TOKEN_KEY));
   const [isLoading, setIsLoading] = useState(!!localStorage.getItem(TOKEN_KEY));
@@ -72,7 +79,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const res = await api.get<AuthUser>('/api/auth/me');
         if (!cancelled) {
           setUser(res.data);
-          localStorage.setItem(USER_KEY, JSON.stringify(res.data));
+          if (res.data) localStorage.setItem(USER_KEY, JSON.stringify(res.data));
         }
       } catch {
         if (!cancelled) logout();
@@ -94,7 +101,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setToken(access_token);
       setUser(u);
       localStorage.setItem(TOKEN_KEY, access_token);
-      localStorage.setItem(USER_KEY, JSON.stringify(u));
+      if (u) localStorage.setItem(USER_KEY, JSON.stringify(u));
     } catch (err: unknown) {
       const msg =
         axios.isAxiosError(err)
@@ -113,7 +120,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const res = await api.get<AuthUser>('/api/auth/me');
       setUser(res.data);
-      localStorage.setItem(USER_KEY, JSON.stringify(res.data));
+      if (res.data) localStorage.setItem(USER_KEY, JSON.stringify(res.data));
     } catch {
       logout();
     }
