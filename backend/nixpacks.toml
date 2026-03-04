@@ -1,0 +1,4 @@
+# Nixpacks build config for Railway
+# Installs system libraries required by OpenCV (libGL) even on headless servers.
+[phases.setup]
+aptPkgs = ["libgl1", "libglib2.0-0", "libsm6", "libxrender1", "libxext6"]
