@@ -156,29 +156,47 @@ v5-poss/
 
 ---
 
-## Setup
+## Quick Start
 
 ### Prerequisites
 
-- Python 3.8 or higher
-- Node.js 18 or higher
-- MySQL 8.0 or higher
-- GPU with CUDA support (recommended for real-time performance)
-- Model weights placed in `assets/weights/` — `best.pt`, `best1.pt`, `yolov8n-pose.pt`
+- Python 3.10+
+- Node.js 18+
+- MySQL 8.0+
+- Model weights in `assets/weights/` — `best.pt`, `best1.pt`, `yolov8n-pose.pt`, `behavior/`
+- (Optional) CUDA-capable GPU for real-time performance
 
-### Backend
+### One-command setup
 
-1. Create and activate a Python virtual environment.
-2. Install dependencies from `backend/config/requirements.txt`.
-3. Copy `config/.env.example` to `config/.env` and populate database credentials, SMTP settings, JWT secret, and timezone.
-4. Run `backend/database/init_database.py` to initialise the MySQL schema.
-5. Start the server with `python main.py` from the `backend/` directory.
+**Linux / macOS**
+```bash
+chmod +x setup.sh start.sh
+./setup.sh          # install deps + create .env from template
+# edit backend/config/.env — fill in all <CHANGE_ME> values
+./start.sh          # starts backend (8000) + frontend (5173) together
+```
 
-### Frontend
+**Windows (PowerShell)**
+```powershell
+.\setup.ps1         # install deps + create .env from template
+# edit backend\config\.env — fill in all <CHANGE_ME> values
+.\start.ps1         # starts backend (8000) + frontend (5173) in separate windows
+```
 
-1. From the `frontend/` directory, install Node dependencies.
-2. Start the Vite development server (`npm run dev`).
-3. For production, build the SPA (`npm run build`) and serve the `dist/` output.
+### Manual setup
+
+**Backend**
+```bash
+python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\Activate.ps1
+pip install -r backend/config/requirements.txt
+cp backend/config/.env.example backend/config/.env  # then fill in credentials
+cd backend && uvicorn core.app:app --host 0.0.0.0 --port 8000 --reload
+```
+
+**Frontend**
+```bash
+cd frontend && npm install && npm run dev
+```
 
 ### Access Points
 
@@ -194,6 +212,45 @@ v5-poss/
 
 - Email: `admin@dds.local`
 - Password: `admin123`
+
+---
+
+## Environment Variables
+
+All secrets live in `backend/config/.env` (never committed — see `.gitignore`).  
+Copy the template and fill in every `<CHANGE_ME>`:
+
+```bash
+cp backend/config/.env.example backend/config/.env
+```
+
+| Variable | Required | Description |
+|---|---|---|
+| `DB_USER` | ✅ | MySQL username |
+| `DB_PASSWORD` | ✅ | MySQL password |
+| `JWT_SECRET_KEY` | ✅ | HS256 signing key — generate with `python -c "import secrets; print(secrets.token_hex(64))"` |
+| `SMTP_USERNAME` | ⚠️ | Gmail address for alert emails |
+| `SMTP_PASSWORD` | ⚠️ | Gmail App Password (16 chars) |
+| `APP_BASE_URL` | ⚠️ | Frontend origin used in email links |
+| `ALLOWED_ORIGINS` | ⚠️ | Comma-separated list of allowed CORS origins (e.g. `https://your-domain.com`) |
+| `NOTIFICATION_RECIPIENTS` | ⚠️ | Comma-separated alert recipient email addresses |
+| `DEBUG` | — | `true` only for local dev (default: `false`) |
+
+---
+
+## Production Deployment
+
+1. **Build the frontend** — `cd frontend && npm run build` — output is `frontend/dist/`.
+2. **Serve the dist** with Nginx (or any static host) and reverse-proxy `/api`, `/ws`, `/analyze`, `/video`, `/sounds` to `http://localhost:8000`.
+3. **Set `DEBUG=false`** and a strong `JWT_SECRET_KEY` in `.env`.
+4. **Restrict `ALLOWED_ORIGINS`** to your exact frontend domain.
+5. Run the backend with a process manager (e.g. `systemd`, `supervisor`, or Docker):  
+   ```bash
+   uvicorn core.app:app --host 0.0.0.0 --port 8000 --workers 1
+   ```
+6. Put Nginx / Caddy in front with TLS.
+
+> **MySQL** — the backend auto-creates the database and schema on first startup if they don't exist.
 
 ---
 

@@ -20,8 +20,14 @@ load_dotenv(dotenv_path=env_path)
 # ============================================================================
 # DATABASE CREDENTIALS
 # ============================================================================
-DB_USER = os.getenv('DB_USER', 'root')
-DB_PASSWORD = os.getenv('DB_PASSWORD', '')
+# Railway MySQL plugin injects MYSQLUSER / MYSQLHOST / MYSQLPASSWORD /
+# MYSQLDATABASE / MYSQLPORT automatically — we fall back to the Railway vars
+# if the generic ones are not set, so the same .env.example works everywhere.
+DB_USER     = os.getenv('DB_USER')     or os.getenv('MYSQLUSER',     'root')
+DB_PASSWORD = os.getenv('DB_PASSWORD') or os.getenv('MYSQLPASSWORD', '')
+DB_HOST     = os.getenv('DB_HOST')     or os.getenv('MYSQLHOST',     'localhost')
+DB_PORT     = int(os.getenv('DB_PORT') or os.getenv('MYSQLPORT',     '3306'))
+DB_NAME     = os.getenv('DB_NAME')     or os.getenv('MYSQLDATABASE', 'drowning_detection_db')
 
 # ============================================================================
 # EMAIL CREDENTIALS (SMTP)
