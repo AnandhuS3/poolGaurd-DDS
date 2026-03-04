@@ -1,0 +1,3 @@
+# This file lets pip find the real requirements file when Railway
+# installs from the service root (backend/).
+-r config/requirements.txt
