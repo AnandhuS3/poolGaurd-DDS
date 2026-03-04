@@ -53,9 +53,16 @@ JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY', '')
 # CORS
 # ============================================================================
 # Comma-separated list of allowed frontend origins
-# Example: http://localhost:5173,https://your-domain.com
+# Example: ALLOWED_ORIGINS=http://localhost:5173,https://your-frontend.up.railway.app
+# Convenience single-URL alias (Railway: set FRONTEND_URL on the backend service)
 _origins_str = os.getenv('ALLOWED_ORIGINS', 'http://localhost:5173')
 ALLOWED_ORIGINS = [o.strip() for o in _origins_str.split(',') if o.strip()]
+
+# FRONTEND_URL is a single-value convenience alias for Railway deployments.
+# If set and not already in the list, it is appended automatically.
+_frontend_url = os.getenv('FRONTEND_URL', '').strip().rstrip('/')
+if _frontend_url and _frontend_url not in ALLOWED_ORIGINS:
+    ALLOWED_ORIGINS.append(_frontend_url)
 
 # ============================================================================
 # NOTIFICATION RECIPIENTS

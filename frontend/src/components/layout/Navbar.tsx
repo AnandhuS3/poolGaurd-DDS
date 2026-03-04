@@ -83,10 +83,11 @@ export function Navbar() {
               className="hover:text-white transition-colors"
               title="My Profile"
             >
-              {user.name}
+              {user.name?.trim() || user.email || 'User'}
             </Link>
             <span className="text-[#4B5563]">·</span>
             <span className="uppercase text-[10px] text-[#6B7280]">{user.role}</span>
+            <span className="text-[#374151] text-[10px] font-mono">#{user.id}</span>
             <button
               onClick={logout}
               className="ml-1 text-[#6B7280] hover:text-white transition-colors"
