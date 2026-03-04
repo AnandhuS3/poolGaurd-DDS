@@ -207,14 +207,13 @@ async def login(credentials: LoginRequest, request: Request):
     }
 
 
-@app.post("/api/auth/register", status_code=202)
+@app.post("/api/auth/register", status_code=201)
 async def register(user_data: RegisterRequest, request: Request):
     """
     Public user registration.
-    Creates an unverified account and sends an email verification link.
-    Returns 202 Accepted — the client should prompt the user to check their inbox.
+    Creates an immediately-active account (email verification is disabled).
+    Returns 201 Created — the client can redirect the user straight to login.
     """
-    # Register without activating; returns verification_token for unverified accounts
     user_info = AuthService.register_user(
         name=user_data.name,
         email=user_data.email,
@@ -223,29 +222,10 @@ async def register(user_data: RegisterRequest, request: Request):
         role='guard',
         created_by=None,
     )
-
-    verification_token = user_info.pop("verification_token", None)
-
-    if verification_token:
-        # Build the verification URL pointing to the frontend route
-        base_url = getattr(app_config, "APP_BASE_URL", "http://localhost:5173")
-        verification_url = f"{base_url}/verify-email?token={verification_token}"
-
-        # Send verification email (non-blocking)
-        try:
-            asyncio.create_task(
-                asyncio.to_thread(
-                    notification_service.send_verification_email,
-                    user_data.name,
-                    user_data.email,
-                    verification_url,
-                )
-            )
-        except Exception as e:
-            logger.error(f"[REGISTRATION] Failed to queue verification email: {e}")
+    user_info.pop("verification_token", None)  # not generated, but be safe
 
     return {
-        "message": "Registration successful. Please check your email to verify your account before logging in.",
+        "message": "Account created successfully. You can now sign in.",
         "email": user_data.email,
     }
 

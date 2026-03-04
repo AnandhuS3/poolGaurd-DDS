@@ -431,16 +431,14 @@ class AuthService:
         # Hash password
         password_hash = PasswordHasher.hash_password(password)
 
-        # Self-registration requires email verification; admin-created users are pre-verified
-        is_admin_created = created_by is not None
-        email_verified = is_admin_created
+        # All accounts are active immediately — email verification is disabled.
+        # (Admin-created accounts are also pre-verified.)
+        is_admin_created = created_by is not None  # kept for audit/logging intent
+        email_verified = True
 
-        # Generate verification token for self-registrations
+        # No verification token needed
         verification_token: Optional[str] = None
         verification_expiry: Optional[datetime] = None
-        if not email_verified:
-            verification_token = secrets.token_urlsafe(32)
-            verification_expiry = datetime.utcnow() + timedelta(minutes=VERIFICATION_TOKEN_MINUTES)
 
         # Create user
         user_id = User.create(
