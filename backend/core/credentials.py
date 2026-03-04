@@ -40,8 +40,9 @@ SMTP_PASSWORD = os.getenv('SMTP_PASSWORD', '')
 # ============================================================================
 # APP CONFIGURATION
 # ============================================================================
-# Base URL used for verification and reset links in emails
-APP_BASE_URL = os.getenv('APP_BASE_URL', 'http://localhost:5173')
+# Base URL used for verification and reset links in emails.
+# Falls back to the production Railway frontend when the env var is not set.
+APP_BASE_URL = os.getenv('APP_BASE_URL', 'https://frontend-production-211f.up.railway.app')
 
 # ============================================================================
 # SECURITY / JWT
@@ -55,7 +56,12 @@ JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY', '')
 # Comma-separated list of allowed frontend origins
 # Example: ALLOWED_ORIGINS=http://localhost:5173,https://your-frontend.up.railway.app
 # Convenience single-URL alias (Railway: set FRONTEND_URL on the backend service)
-_origins_str = os.getenv('ALLOWED_ORIGINS', 'http://localhost:5173')
+# Default includes the production Railway frontend so CORS works even before the
+# ALLOWED_ORIGINS env var is configured on the Railway backend service.
+_origins_str = os.getenv(
+    'ALLOWED_ORIGINS',
+    'http://localhost:5173,https://frontend-production-211f.up.railway.app'
+)
 ALLOWED_ORIGINS = [o.strip() for o in _origins_str.split(',') if o.strip()]
 
 # FRONTEND_URL is a single-value convenience alias for Railway deployments.

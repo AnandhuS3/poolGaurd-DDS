@@ -282,7 +282,7 @@ async def forgot_password(body: ForgotPasswordRequest, request: Request):
 
     if reset_token:
         user = __import__('core.database', fromlist=['User']).User.get_by_email(body.email)
-        base_url = getattr(app_config, "APP_BASE_URL", "http://localhost:5173")
+        base_url = getattr(app_config, "APP_BASE_URL", "https://frontend-production-211f.up.railway.app")
         reset_url = f"{base_url}/reset-password?token={reset_token}"
 
         try:
@@ -818,20 +818,35 @@ async def stream_video(filename: str, request: Request):
 # ============================================================================
 # These must be defined BEFORE the StaticFiles mount to take precedence
 
-@app.get("/login")
-async def login_redirect():
-    """Redirect /login to /login.html"""
-    return RedirectResponse(url="/login.html", status_code=302)
+# ============================================================================
+# HEALTH CHECK ENDPOINTS
+# ============================================================================
 
-@app.get("/register")
-async def register_redirect():
-    """Redirect /register to /register.html"""
-    return RedirectResponse(url="/register.html", status_code=302)
+@app.get("/health")
+async def health_check():
+    """Liveness probe — Railway and load balancers use this to verify the
+    container is accepting HTTP requests."""
+    return {"status": "ok", "service": "PoolGuard API"}
 
-@app.get("/admin")
-async def admin_redirect():
-    """Redirect /admin to /admin.html"""
-    return RedirectResponse(url="/admin.html", status_code=302)
+
+@app.get("/db-test")
+async def db_test():
+    """Connectivity probe — verifies the backend can reach MySQL."""
+    try:
+        result = db.execute_query("SELECT 1 AS ping")
+        return {"status": "ok", "db": "connected", "result": result}
+    except Exception as exc:
+        return JSONResponse(
+            status_code=503,
+            content={"status": "error", "db": "unreachable", "detail": str(exc)},
+        )
+
+
+# ============================================================================
+# FRONTEND PAGE ROUTES  (legacy / local-dev only — not used in Railway)
+# ============================================================================
+# These redirect to .html files that only exist when the legacy frontend_legacy/
+# is served.  Skip them silently when the files are absent (Railway backend-only).
 
 # Mount uploads folder to serve videos
 app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
@@ -839,9 +854,15 @@ app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
 # Mount sounds folder to serve alarm audio
 app.mount("/sounds", StaticFiles(directory=str(SOUNDS_DIR)), name="sounds")
 
-# Mount frontend folder to serve HTML - MUST BE LAST
-# Note: This serves index.html and other static HTML files from frontend/
-app.mount("/", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="static")
+# Mount the legacy/built frontend only when the directory actually contains
+# HTML files.  On Railway the frontend is deployed as its own separate service
+# (frontend-production-211f.up.railway.app) and this directory is absent,
+# so we skip the mount to avoid a startup crash.
+if FRONTEND_DIR.exists() and any(FRONTEND_DIR.glob("*.html")):
+    app.mount("/", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="static")
+    logger.info(f"[STATIC] Serving legacy frontend from {FRONTEND_DIR}")
+else:
+    logger.info("[STATIC] No local frontend directory found — static file mount skipped (Railway mode)")
 
 if __name__ == "__main__":
     print("=" * 60)
