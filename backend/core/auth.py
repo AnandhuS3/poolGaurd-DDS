@@ -132,8 +132,10 @@ class RegisterRequest(BaseModel):
 
     @validator('email')
     def validate_email_domain(cls, v):
-        """Reject disposable domains and domains without MX records."""
-        _validate_email_domain(str(v))
+        """Reject known disposable domains. DNS MX check is skipped (no outbound mail)."""
+        domain = str(v).split('@')[-1].lower()
+        if domain in DISPOSABLE_EMAIL_DOMAINS:
+            raise ValueError(f'Disposable/temporary email addresses are not allowed ({domain}).')
         return v
 
     @validator('phone_number')
@@ -402,14 +404,11 @@ class AuthService:
     def register_user(name: str, email: str, phone_number: Optional[str], password: str,
                       role: str = 'guard', created_by: Optional[int] = None) -> Dict:
         """
-        Register new user.
-
-        * Public self-registration: account is created UNVERIFIED.
-          Caller must send a verification email with the returned token.
-        * Admin-created users: account is created pre-verified.
+        Register new user. All accounts are created pre-verified and immediately active.
+        Email verification is disabled.
 
         Returns:
-            Dict with user info and (for unverified accounts) 'verification_token'.
+            Dict with user info.
 
         Raises:
             HTTPException: If user creation fails.
@@ -718,11 +717,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
             detail="Account is deactivated"
         )
 
-    if not user.get('email_verified', True):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Email address not verified"
-        )
+    # Email verification is disabled — skip the email_verified check.
     active_session = Session.get_active_session(user_id)
     if not active_session:
         raise HTTPException(
