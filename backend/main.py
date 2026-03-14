@@ -20,7 +20,7 @@ if __name__ == "__main__":
     print(f"\n🌐 Server: http://{SERVER_HOST}:{SERVER_PORT}")
     print(f"🔐 Login: http://localhost:{SERVER_PORT}/login")
     print(f"📝 Register: http://localhost:{SERVER_PORT}/register")
-    print(f"👤 Default admin: admin@dds.local / admin123")
+    print(f"👤 Default admin: creagoouon@gmail.com / admin123")
     print(f"⚠️  CHANGE PASSWORD IMMEDIATELY!")
     print(f"\n✨ PoolGaurd - Advanced Pool Safety System\n")
     uvicorn.run(app, host=SERVER_HOST, port=SERVER_PORT)

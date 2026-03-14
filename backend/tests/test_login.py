@@ -12,7 +12,7 @@ conn = mysql.connector.connect(
 cursor = conn.cursor()
 
 # Get admin user
-cursor.execute('SELECT name, email, password_hash FROM users WHERE email = %s', ('admin@dds.local',))
+cursor.execute('SELECT name, email, password_hash FROM users WHERE email = %s', ('creagoouon@gmail.com',))
 result = cursor.fetchone()
 
 if result:
@@ -31,7 +31,7 @@ if result:
     if not is_valid:
         print("\n⚠️  Password mismatch! Creating new hash...")
         new_hash = PasswordHasher.hash_password('admin123')
-        cursor.execute('UPDATE users SET password_hash = %s WHERE email = %s', (new_hash, 'admin@dds.local'))
+        cursor.execute('UPDATE users SET password_hash = %s WHERE email = %s', (new_hash, 'creagoouon@gmail.com'))
         conn.commit()
         print("✅ Password reset to: admin123")
 else:

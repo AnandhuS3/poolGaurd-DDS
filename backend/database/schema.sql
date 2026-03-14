@@ -130,7 +130,7 @@ CREATE TABLE IF NOT EXISTS system_config (
 INSERT INTO users (name, email, phone_number, password_hash, role, is_active, is_system_admin) 
 VALUES (
     'System Administrator',
-    'admin@dds.local',
+    'creagoouon@gmail.com',
     '+1234567890',
     '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5GyYqMvFj9nPu',  -- admin123
     'admin',

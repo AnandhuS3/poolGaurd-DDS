@@ -6,6 +6,7 @@
 import { useState, type FormEvent, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
+import { parseApiError } from '../../services/parseApiError';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 
@@ -50,7 +51,7 @@ export function Profile() {
     } catch (err: unknown) {
       setError(
         axios.isAxiosError(err)
-          ? (err.response?.data?.detail as string) ?? 'Update failed'
+          ? parseApiError(err, 'Update failed')
           : 'Update failed',
       );
     } finally {

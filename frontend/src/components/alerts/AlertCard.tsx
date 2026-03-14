@@ -7,6 +7,7 @@ import type { ActiveAlert } from '../../types/detection';
 
 interface AlertCardProps {
   alert: ActiveAlert;
+  onDismiss?: () => void;
 }
 
 const STATE_CONFIG = {
@@ -37,7 +38,7 @@ function timeAgo(epochMs: number): string {
   return `${min}m ${sec % 60}s ago`;
 }
 
-export function AlertCard({ alert }: AlertCardProps) {
+export function AlertCard({ alert, onDismiss }: AlertCardProps) {
   const cfg = STATE_CONFIG[alert.state];
 
   return (
@@ -52,7 +53,18 @@ export function AlertCard({ alert }: AlertCardProps) {
           </span>
           <span className="text-[#9CA3AF] font-mono text-xs">ID #{alert.trackId}</span>
         </div>
-        <span className="text-[#6B7280] text-xs">{timeAgo(alert.detectedAt)}</span>
+        <div className="flex items-center gap-2">
+          <span className="text-[#6B7280] text-xs">{timeAgo(alert.detectedAt)}</span>
+          {onDismiss && (
+            <button
+              onClick={onDismiss}
+              title="Acknowledge – mark issue as noticed"
+              className="text-[#6B7280] hover:text-white text-xs px-1.5 py-0.5 rounded border border-[#374151] hover:border-[#6B7280] transition-colors leading-none"
+            >
+              ✓ ACK
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Details */}

@@ -6,6 +6,7 @@
 import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
+import { parseApiError } from '../../services/parseApiError';
 import api from '../../services/api';
 
 export function ChangePassword() {
@@ -48,7 +49,7 @@ export function ChangePassword() {
     } catch (err: unknown) {
       setError(
         axios.isAxiosError(err)
-          ? (err.response?.data?.detail as string) ?? 'Failed to change password'
+          ? parseApiError(err, 'Failed to change password')
           : 'Failed to change password',
       );
     } finally {

@@ -10,6 +10,7 @@
 
 import { useEffect, useState, type FormEvent } from 'react';
 import axios from 'axios';
+import { parseApiError } from '../../services/parseApiError';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 
@@ -112,7 +113,7 @@ export function UserManagement() {
     } catch (err: unknown) {
       setFormError(
         axios.isAxiosError(err)
-          ? (err.response?.data?.detail as string) ?? 'Operation failed'
+          ? parseApiError(err, 'Operation failed')
           : 'Operation failed',
       );
     } finally {
@@ -137,7 +138,7 @@ export function UserManagement() {
     } catch (err: unknown) {
       alert(
         axios.isAxiosError(err)
-          ? (err.response?.data?.detail as string) ?? 'Delete failed'
+          ? parseApiError(err, 'Delete failed')
           : 'Delete failed',
       );
     }

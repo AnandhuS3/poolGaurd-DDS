@@ -8,6 +8,7 @@
 
 import { useEffect, useState, type FormEvent } from 'react';
 import axios from 'axios';
+import { parseApiError } from '../../services/parseApiError';
 import api from '../../services/api';
 
 interface SystemAdminInfo {
@@ -60,7 +61,7 @@ export function SystemAdmin() {
     } catch (err: unknown) {
       setPwError(
         axios.isAxiosError(err)
-          ? (err.response?.data?.detail as string) ?? 'Password update failed'
+          ? parseApiError(err, 'Password update failed')
           : 'Password update failed',
       );
     } finally {

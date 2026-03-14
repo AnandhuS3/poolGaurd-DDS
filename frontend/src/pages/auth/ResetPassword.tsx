@@ -8,6 +8,7 @@ import { useState, type FormEvent } from 'react';
 import { useSearchParams, Link, useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 import axios from 'axios';
+import { parseApiError } from '../../services/parseApiError';
 
 function passwordStrength(pw: string): { score: number; label: string; color: string } {
   let score = 0;
@@ -64,7 +65,7 @@ export function ResetPassword() {
       setTimeout(() => navigate('/login'), 3000);
     } catch (e: unknown) {
       const msg = axios.isAxiosError(e)
-        ? (e.response?.data?.detail as string) ?? 'Failed to reset password.'
+        ? parseApiError(e, 'Failed to reset password.')
         : 'Failed to reset password.';
       setError(msg);
     } finally {

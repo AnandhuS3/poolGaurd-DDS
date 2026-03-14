@@ -339,14 +339,6 @@ class AuthService:
                 detail="Account is deactivated"
             )
 
-        # Check email verification
-        if not user.get('email_verified', True):  # default True for legacy rows
-            AuditLog.log("LOGIN_FAILED", user['id'], "Email not verified", ip_address)
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Please verify your email address before logging in. Check your inbox for the verification link."
-            )
-
         # Verify password
         if not PasswordHasher.verify_password(password, user['password_hash']):
             AuditLog.log("LOGIN_FAILED", user['id'], "Invalid password", ip_address)
@@ -410,12 +402,13 @@ class AuthService:
         """
         Register new user.
 
-        * Public self-registration: account is created UNVERIFIED.
-          Caller must send a verification email with the returned token.
-        * Admin-created users: account is created pre-verified.
+        All accounts are immediately active — no email verification required.
+        Email is used only for notifications (alerts, password reset, welcome).
+        Unauthorized email domains (disposable/throwaway) are blocked at the
+        RegisterRequest model validator level via _validate_email_domain().
 
         Returns:
-            Dict with user info and (for unverified accounts) 'verification_token'.
+            Dict with user info (id, name, email, role, is_active, email_verified).
 
         Raises:
             HTTPException: If user creation fails.
@@ -431,16 +424,10 @@ class AuthService:
         # Hash password
         password_hash = PasswordHasher.hash_password(password)
 
-        # Self-registration requires email verification; admin-created users are pre-verified
-        is_admin_created = created_by is not None
-        email_verified = is_admin_created
-
-        # Generate verification token for self-registrations
+        # All accounts are immediately active — no email verification step
+        email_verified = True
         verification_token: Optional[str] = None
         verification_expiry: Optional[datetime] = None
-        if not email_verified:
-            verification_token = secrets.token_urlsafe(32)
-            verification_expiry = datetime.utcnow() + timedelta(minutes=VERIFICATION_TOKEN_MINUTES)
 
         # Create user
         user_id = User.create(
@@ -473,49 +460,29 @@ class AuthService:
             "phone_number": user.get('phone_number', ''),
             "role": user['role'],
             "is_active": user['is_active'],
-            "email_verified": user.get('email_verified', email_verified),
+            "email_verified": True,
         }
-
-        if verification_token:
-            result["verification_token"] = verification_token  # Caller uses this to build the URL
 
         return result
 
     @staticmethod
     def verify_email(token: str) -> Dict:
         """
-        Verify email using the single-use token from the verification link.
-
-        Sets email_verified=True, clears the token, and returns basic user info.
-        Raises HTTPException on invalid / expired tokens.
+        Legacy stub — email verification is no longer required.
+        Accounts are active immediately after registration.
+        This endpoint is kept for backward-compatibility with old email links.
         """
+        # Try to find the user by token for a friendly response; gracefully return
+        # a success regardless so that stale links don't confuse users.
         user = User.get_by_verification_token(token)
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid or already-used verification link."
-            )
-
-        expiry = user.get('verification_token_expiry')
-        if expiry and datetime.utcnow() > expiry:
-            # Clean up the expired token
+        if user:
+            # Mark as verified and clear the stale token if somehow still present
+            User.set_email_verified(user['id'])
             User.clear_verification_token(user['id'])
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Verification link has expired. Please register again or request a new link."
-            )
-
-        # Activate account
-        User.set_email_verified(user['id'])
-        AuditLog.log("EMAIL_VERIFIED", user['id'], f"Email verified: {user['email']}")
-        logger.info(f"[AUTH] Email verified: {user['email']}")
-
-        return {
-            "id": user['id'],
-            "name": user['name'],
-            "email": user['email'],
-            "role": user['role'],
-        }
+            return {"id": user['id'], "name": user['name'],
+                    "email": user['email'], "role": user['role']}
+        # Token already used / unknown — return a generic success dict
+        return {"id": 0, "name": "", "email": "", "role": ""}
 
     @staticmethod
     def request_password_reset(email: str, ip_address: Optional[str] = None) -> Optional[str]:
@@ -577,11 +544,6 @@ class AuthService:
         new_hash = PasswordHasher.hash_password(new_password)
         User.update_password_hash(user['id'], new_hash)
         User.clear_reset_token(user['id'])
-
-        # Resetting the password via a valid email link proves ownership — mark as verified.
-        if not user.get('email_verified', False):
-            User.set_email_verified(user['id'])
-            logger.info(f"[AUTH] Email auto-verified via password reset for user ID {user['id']}")
 
         AuditLog.log("PASSWORD_RESET_SUCCESS", user['id'], "Password reset via email token")
         logger.info(f"[AUTH] Password reset completed for user ID {user['id']}")
@@ -724,12 +686,6 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account is deactivated"
-        )
-
-    if not user.get('email_verified', True):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Email address not verified"
         )
 
     active_session = Session.get_active_session(user_id)

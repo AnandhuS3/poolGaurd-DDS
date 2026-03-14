@@ -192,7 +192,7 @@ v5-poss/
 
 > **Change immediately after first login.**
 
-- Email: `admin@dds.local`
+- Email: `creagoouon@gmail.com`
 - Password: `admin123`
 
 ---

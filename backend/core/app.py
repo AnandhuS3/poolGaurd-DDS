@@ -129,9 +129,9 @@ def ensure_database_ready():
                 INSERT INTO users (name, email, password_hash, role, phone_number, created_at)
                 VALUES (%s, %s, %s, %s, %s, NOW())
             """
-            cursor.execute(insert_query, ('admin', 'admin@dds.local', password_hash, 'admin', '+00 00000 00000'))
+            cursor.execute(insert_query, ('admin', 'creagoouon@gmail.com', password_hash, 'admin', '+00 00000 00000'))
             conn.commit()
-            logger.info("[DATABASE] [OK] Default admin created: admin@dds.local / admin123")
+            logger.info("[DATABASE] [OK] Default admin created: creagoouon@gmail.com / admin123")
         else:
             logger.info(f"[DATABASE] Found {admin_count} admin user(s)")
         
@@ -207,14 +207,13 @@ async def login(credentials: LoginRequest, request: Request):
     }
 
 
-@app.post("/api/auth/register", status_code=202)
+@app.post("/api/auth/register", status_code=201)
 async def register(user_data: RegisterRequest, request: Request):
     """
     Public user registration.
-    Creates an unverified account and sends an email verification link.
-    Returns 202 Accepted — the client should prompt the user to check their inbox.
+    Creates an active account immediately — no email verification required.
+    Sends a welcome email notification to the new user.
     """
-    # Register without activating; returns verification_token for unverified accounts
     user_info = AuthService.register_user(
         name=user_data.name,
         email=user_data.email,
@@ -224,28 +223,21 @@ async def register(user_data: RegisterRequest, request: Request):
         created_by=None,
     )
 
-    verification_token = user_info.pop("verification_token", None)
-
-    if verification_token:
-        # Build the verification URL pointing to the frontend route
-        base_url = getattr(app_config, "APP_BASE_URL", "http://localhost:5173")
-        verification_url = f"{base_url}/verify-email?token={verification_token}"
-
-        # Send verification email (non-blocking)
-        try:
-            asyncio.create_task(
-                asyncio.to_thread(
-                    notification_service.send_verification_email,
-                    user_data.name,
-                    user_data.email,
-                    verification_url,
-                )
+    # Send welcome email (non-blocking, best-effort)
+    try:
+        asyncio.create_task(
+            asyncio.to_thread(
+                notification_service.send_welcome_email,
+                user_data.name,
+                user_data.email,
+                'guard',
             )
-        except Exception as e:
-            logger.error(f"[REGISTRATION] Failed to queue verification email: {e}")
+        )
+    except Exception as e:
+        logger.error(f"[REGISTRATION] Failed to queue welcome email: {e}")
 
     return {
-        "message": "Registration successful. Please check your email to verify your account before logging in.",
+        "message": "Registration successful. You can now log in.",
         "email": user_data.email,
     }
 
@@ -253,14 +245,14 @@ async def register(user_data: RegisterRequest, request: Request):
 @app.get("/api/auth/verify-email")
 async def verify_email(token: str):
     """
-    Email verification endpoint — called when the user clicks the link in their inbox.
-    Marks the account as verified and returns a success message.
+    Legacy email-verification endpoint kept for backward-compatibility.
+    Email verification is no longer required; this always succeeds gracefully.
     """
     user = AuthService.verify_email(token)
     return {
         "message": "Email verified successfully. You can now log in.",
-        "name": user["name"],
-        "email": user["email"],
+        "name": user.get("name", ""),
+        "email": user.get("email", ""),
     }
 
 
@@ -852,7 +844,7 @@ if __name__ == "__main__":
     print(f"\n🌐 Server: http://{SERVER_HOST}:{SERVER_PORT}")
     print(f"🔐 Login: http://localhost:{SERVER_PORT}/login")
     print(f"📝 Register: http://localhost:{SERVER_PORT}/register")
-    print(f"👤 Default admin: admin@dds.local / admin123")
+    print(f"👤 Default admin: creagoouon@gmail.com / admin123")
     print(f"⚠️  CHANGE PASSWORD IMMEDIATELY!")
     print(f"\n✨ PoolGaurd - Advanced Pool Safety System\n")
     uvicorn.run(app, host=SERVER_HOST, port=SERVER_PORT)

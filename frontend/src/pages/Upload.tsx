@@ -11,6 +11,7 @@
 import { useState, useRef, useEffect, type DragEvent, type ChangeEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { parseApiError } from '../services/parseApiError';
 import { useAuth } from '../context/AuthContext';
 import { wsClient } from '../core/websocket/WebSocketClient';
 import { DetectionStore, type DetectionState } from '../state/DetectionStore';
@@ -96,9 +97,7 @@ export function Upload() {
       setUploadedFilename(res.data.filename);
       setFileStatus('ready');
     } catch (err: unknown) {
-      const msg = axios.isAxiosError(err)
-        ? (err.response?.data?.detail as string) ?? 'Upload failed'
-        : 'Upload failed';
+      const msg = parseApiError(err, 'Upload failed');
       setFileError(msg);
       setFileStatus('error');
     }
@@ -115,9 +114,7 @@ export function Upload() {
       setUploadedFilename(res.data.filename);
       setYtStatus('ready');
     } catch (err: unknown) {
-      const msg = axios.isAxiosError(err)
-        ? (err.response?.data?.detail as string) ?? 'YouTube download failed'
-        : 'YouTube download failed';
+      const msg = parseApiError(err, 'YouTube download failed');
       setYtError(msg);
       setYtStatus('error');
     }
@@ -126,13 +123,28 @@ export function Upload() {
   // ── Start analysis ───────────────────────────────────────────────────────────
   const handleStartAnalysis = () => {
     if (!uploadedPath || !token) return;
+    const pathToSend = uploadedPath;
+
+    // Reset state from any previous analysis
     DetectionStore.reset();
     AlertStore.clear();
+
+    // Always disconnect first so we get a clean connection (prevents the
+    // "already open – skipping" guard from silently blocking a new session).
+    wsClient.disconnect();
     wsClient.connect(token);
-    setTimeout(() => {
-      wsClient.startProcessing(uploadedPath);
-      navigate('/');
-    }, 600);
+
+    // Navigate to Dashboard immediately – it will show idle until the first frame arrives
+    navigate('/');
+
+    // Send the video path as soon as the socket is confirmed open.
+    // This is more robust than a fixed timeout (handles slow localhost startup).
+    const unsub = wsClient.onStatus((status) => {
+      if (status === 'connected') {
+        wsClient.startProcessing(pathToSend);
+        unsub();
+      }
+    });
   };
 
   const isReady = fileStatus === 'ready' || ytStatus === 'ready';

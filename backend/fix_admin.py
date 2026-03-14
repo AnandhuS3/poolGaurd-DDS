@@ -20,12 +20,12 @@ print("users columns:", cols)
 if 'is_system_admin' not in cols:
     print("MISSING is_system_admin column — adding it now...")
     cursor.execute("ALTER TABLE users ADD COLUMN is_system_admin BOOLEAN NOT NULL DEFAULT FALSE")
-    cursor.execute("UPDATE users SET is_system_admin = TRUE WHERE email = 'admin@dds.local'")
+    cursor.execute("UPDATE users SET is_system_admin = TRUE WHERE email = 'creagoouon@gmail.com'")
     conn.commit()
     print("Done — column added and system admin flagged.")
 else:
     print("is_system_admin column exists.")
-    cursor.execute("SELECT id, name, email, role, is_active, is_system_admin FROM users WHERE email='admin@dds.local'")
+    cursor.execute("SELECT id, name, email, role, is_active, is_system_admin FROM users WHERE email='creagoouon@gmail.com'")
     print("Admin row:", cursor.fetchone())
 
 cursor.close()

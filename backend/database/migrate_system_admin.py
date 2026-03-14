@@ -49,14 +49,14 @@ def run_migration():
         cursor.execute("""
             UPDATE users 
             SET is_system_admin = TRUE 
-            WHERE email = 'admin@dds.local' AND role = 'admin'
+            WHERE email = 'creagoouon@gmail.com' AND role = 'admin'
             LIMIT 1
         """)
         affected = cursor.rowcount
         if affected > 0:
             print(f"✓ Marked {affected} user as system administrator")
         else:
-            print("⚠ No user found with email 'admin@dds.local'")
+            print("⚠ No user found with email 'creagoouon@gmail.com'")
         
         # Step 3: Ensure only ONE system admin exists
         print("\n[3/4] Enforcing single system admin constraint...")

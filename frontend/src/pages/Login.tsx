@@ -4,12 +4,14 @@
  */
 
 import { useState, useEffect, type FormEvent } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 export function Login() {
   const { login, isLoading, token } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const justRegistered = (location.state as { registered?: boolean } | null)?.registered === true;
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -48,6 +50,12 @@ export function Login() {
           className="bg-[#121212] border border-[#1F2937] rounded p-6 flex flex-col gap-4"
         >
           <h2 className="text-white font-semibold text-sm uppercase tracking-wide">Sign In</h2>
+
+          {justRegistered && (
+            <div className="bg-[#34C759]/10 border border-[#34C759]/30 text-[#34C759] text-xs rounded p-3">
+              Account created — sign in to continue.
+            </div>
+          )}
 
           {error && (
             <div className="bg-[#FF3B30]/10 border border-[#FF3B30]/40 text-[#FF3B30] text-xs rounded p-3">
@@ -89,7 +97,7 @@ export function Login() {
         </form>
 
         <p className="text-center text-[#6B7280] text-xs mt-4">
-          Default admin: admin@dds.local / Admin1234
+          Default admin: creagoouon@gmail.com / Admin1234
         </p>
         <p className="text-center text-[#6B7280] text-xs mt-2">
           Don't have an account?{' '}

@@ -85,7 +85,7 @@ def initialize_database():
             connection.commit()
             print("\n✅ Database initialized successfully!")
             print("\n📝 Default Admin Credentials:")
-            print("   Email: admin@dds.local")
+            print("   Email: creagoouon@gmail.com")
             print("   Password: admin123")
             print("\n⚠️  IMPORTANT: Change the default password immediately!")
             print("\n💾 Update your config.py with these settings:")

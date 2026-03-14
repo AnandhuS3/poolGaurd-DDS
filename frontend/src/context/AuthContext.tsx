@@ -12,6 +12,7 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import axios from 'axios';
 import api, { setLogoutHandler } from '../services/api';
+import { parseApiError } from '../services/parseApiError';
 import type { AuthUser, AuthTokens } from '../types/detection';
 
 interface AuthContextValue {
@@ -103,10 +104,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem(TOKEN_KEY, access_token);
       if (u) localStorage.setItem(USER_KEY, JSON.stringify(u));
     } catch (err: unknown) {
-      const msg =
-        axios.isAxiosError(err)
-          ? (err.response?.data?.detail as string) ?? 'Login failed'
-          : 'Login failed';
+      const msg = parseApiError(err, 'Login failed');
       setError(msg);
       throw new Error(msg);
     } finally {

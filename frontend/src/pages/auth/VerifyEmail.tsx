@@ -8,6 +8,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import api from '../../services/api';
 import axios from 'axios';
+import { parseApiError } from '../../services/parseApiError';
 
 type State = 'loading' | 'success' | 'error';
 
@@ -36,7 +37,7 @@ export function VerifyEmail() {
       .catch((err: unknown) => {
         setState('error');
         const detail = axios.isAxiosError(err)
-          ? (err.response?.data?.detail as string) ?? 'Verification failed.'
+          ? parseApiError(err, 'Verification failed.')
           : 'Verification failed.';
         setMessage(detail);
       });

@@ -102,6 +102,11 @@ export interface ActiveAlert {
   detectedAt: number; // epoch ms
 }
 
+export interface AcknowledgedAlert extends ActiveAlert {
+  /** Epoch ms when the operator acknowledged this alert */
+  acknowledgedAt: number;
+}
+
 // ──────────────────────────────────────────────
 // Auth types
 // ──────────────────────────────────────────────
