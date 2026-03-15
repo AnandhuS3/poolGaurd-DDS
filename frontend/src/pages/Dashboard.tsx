@@ -15,9 +15,14 @@ import { AlertPanel } from '../components/alerts/AlertPanel';
 import { DetectionStore, type DetectionState } from '../state/DetectionStore';
 import { AlertStore } from '../state/AlertStore';
 import { wsClient } from '../core/websocket/WebSocketClient';
+import api from '../services/api';
+import { useAuth } from '../context/AuthContext';
+import { useRef } from 'react';
 
 export function Dashboard() {
   const navigate = useNavigate();
+  const { token } = useAuth();
+  const autoConnectAttempted = useRef(false);
   const [detection, setDetection] = useState<DetectionState>(() =>
     DetectionStore.getState()
   );
@@ -25,6 +30,32 @@ export function Dashboard() {
   useEffect(() => {
     return DetectionStore.subscribe(setDetection);
   }, []);
+
+  // Auto-connect to the first active camera if not already processing
+  useEffect(() => {
+    if (detection.isProcessing || autoConnectAttempted.current || !token) {
+      return;
+    }
+    
+    const autoConnect = async () => {
+      autoConnectAttempted.current = true;
+      try {
+        const res = await api.get<any[]>('/api/cameras');
+        const activeCamera = res.data.find((c) => c.status === 'active');
+        if (activeCamera) {
+          console.log(`[Dashboard] Auto-connecting to camera: ${activeCamera.camera_name}`);
+          DetectionStore.reset();
+          AlertStore.clear();
+          wsClient.disconnect();
+          wsClient.connect(token, `/ws/camera/${activeCamera.id}`);
+        }
+      } catch (err) {
+        console.error('[Dashboard] Failed to auto-connect to camera:', err);
+      }
+    };
+
+    autoConnect();
+  }, [detection.isProcessing, token]);
 
   const vW = detection.videoInfo?.width ?? 1280;
   const vH = detection.videoInfo?.height ?? 720;
@@ -34,6 +65,7 @@ export function Dashboard() {
     DetectionStore.reset();
     AlertStore.clear();
     wsClient.disconnect();
+    autoConnectAttempted.current = false; // allow auto-connect to try again if needed
     navigate('/upload');
   };
 
@@ -60,7 +92,7 @@ export function Dashboard() {
           srcHeight={vH}
           fps={vFPS}
           idle={!detection.isProcessing && !detection.frameImage}
-          active={detection.isProcessing}
+          active={detection.isProcessing || !!detection.frameImage}
           className="flex-1 rounded border border-[#1F2937]"
         />
       </div>
