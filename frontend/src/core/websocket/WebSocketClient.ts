@@ -24,7 +24,8 @@ export type WsClientStatus =
   | 'disconnected'
   | 'error';
 
-const BASE_URL = 'ws://localhost:8000';
+const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+const BASE_URL = `${protocol}//${window.location.host}`;
 const WS_PATH = '/ws/process';
 const MAX_RETRIES = 8;
 const BASE_DELAY_MS = 1000;
@@ -32,6 +33,7 @@ const BASE_DELAY_MS = 1000;
 class WebSocketClient {
   private socket: WebSocket | null = null;
   private token: string | null = null;
+  private currentEndpoint: string = WS_PATH;
   private retryCount = 0;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private intentionalClose = false;
@@ -65,7 +67,7 @@ class WebSocketClient {
 
   // ── Connection ─────────────────────────────────────────────────────────
 
-  connect(token: string) {
+  connect(token: string, endpoint: string = WS_PATH) {
     // Prevent duplicate connections
     if (
       this.socket &&
@@ -77,6 +79,7 @@ class WebSocketClient {
     }
 
     this.token = token;
+    this.currentEndpoint = endpoint;
     this.intentionalClose = false;
     this._openSocket();
   }
@@ -84,7 +87,7 @@ class WebSocketClient {
   private _openSocket() {
     if (!this.token) return;
 
-    const url = `${BASE_URL}${WS_PATH}?token=${encodeURIComponent(this.token)}`;
+    const url = `${BASE_URL}${this.currentEndpoint}?token=${encodeURIComponent(this.token)}`;
     console.debug('[WS] Connecting to', url);
     this.setStatus(this.retryCount === 0 ? 'connecting' : 'reconnecting');
 

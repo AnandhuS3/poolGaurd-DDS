@@ -30,6 +30,8 @@ import { UserManagement } from './pages/admin/UserManagement';
 import { SystemAdmin } from './pages/admin/SystemAdmin';
 import { Sessions } from './pages/admin/Sessions';
 import { AlertHistory } from './pages/admin/AlertHistory';
+import { CctvManager } from './pages/admin/CctvManager';
+import { GuardMonitor } from './pages/admin/GuardMonitor';
 
 // Auth guard wrapper — waits for /me check before deciding
 function ProtectedLayout() {
@@ -77,6 +79,8 @@ export default function App() {
               <Route index element={<AdminDashboard />} />
               <Route path="users" element={<UserManagement />} />
               <Route path="system-admin" element={<SystemAdmin />} />
+              <Route path="cctv-manager" element={<CctvManager />} />
+              <Route path="guard-monitor" element={<GuardMonitor />} />
               <Route path="sessions" element={<Sessions />} />
               <Route path="alerts" element={<AlertHistory />} />
             </Route>

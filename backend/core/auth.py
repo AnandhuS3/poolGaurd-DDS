@@ -797,3 +797,48 @@ def get_client_ip(request: Request) -> str:
 def get_user_agent(request: Request) -> str:
     """Extract user agent from request"""
     return request.headers.get("User-Agent", "unknown")
+
+
+async def get_current_user_from_query_token(request: Request) -> Dict:
+    """
+    Auth dependency for streaming endpoints (MJPEG) where the client
+    cannot set an Authorization header (e.g. WebView <img> or direct URL).
+
+    Accepts the JWT via ?token=<jwt> query parameter.
+    Falls back to Authorization: Bearer header so regular API clients still work.
+    """
+    # 1. Try query param first (WebView / img tag usage)
+    token = request.query_params.get("token")
+
+    # 2. Fall back to Authorization header
+    if not token:
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required. Pass ?token=<jwt> or Authorization header.",
+        )
+
+    payload = TokenManager.decode_token(token)
+    user_id = int(payload["sub"])
+    user = User.get_by_id(user_id)
+
+    if not user or not user["is_active"]:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found or inactive.")
+
+    active_session = Session.get_active_session(user_id)
+    if not active_session:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No active session. Please log in.")
+
+    return {
+        "id": user["id"],
+        "name": user["name"],
+        "email": user["email"],
+        "phone_number": user["phone_number"],
+        "role": user["role"],
+        "is_active": user["is_active"],
+    }
+

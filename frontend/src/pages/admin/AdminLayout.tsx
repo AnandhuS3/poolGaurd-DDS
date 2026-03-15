@@ -10,6 +10,8 @@ import { useAuth } from '../../context/AuthContext';
 
 const ADMIN_LINKS = [
   { to: '/admin', label: 'Dashboard', end: true },
+  { to: '/admin/cctv-manager', label: 'CCTV Manager' },
+  { to: '/admin/guard-monitor', label: '📱 Guard Monitor' },
   { to: '/admin/users', label: 'User Management' },
   { to: '/admin/system-admin', label: 'System Admin' },
   { to: '/admin/sessions', label: 'Active Sessions' },

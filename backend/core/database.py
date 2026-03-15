@@ -542,6 +542,22 @@ class Alert:
         """
         return db.execute_query(query, (user_id, limit))
 
+    @staticmethod
+    def delete_multiple(alert_ids: List[int]) -> bool:
+        """Delete multiple alerts by ID"""
+        if not alert_ids:
+            return True
+            
+        placeholders = ', '.join(['%s'] * len(alert_ids))
+        query = f"DELETE FROM alerts WHERE id IN ({placeholders})"
+        try:
+            db.execute_query(query, tuple(alert_ids), fetch=False)
+            logger.info(f"[DATABASE] Deleted {len(alert_ids)} alerts")
+            return True
+        except Error as e:
+            logger.error(f"[DATABASE] Failed to delete alerts: {e}")
+            return False
+
 
 class AuditLog:
     """Audit log for security and compliance"""

@@ -252,7 +252,7 @@ async def process_video_realtime(video_path, websocket):
             "type": "error",
             "message": "Could not open video"
         })
-        return
+        raise ValueError("Could not open video stream")
 
     # Get video properties
     fps = int(cap.get(cv2.CAP_PROP_FPS))
@@ -317,10 +317,21 @@ async def process_video_realtime(video_path, websocket):
     skipped_frames = 0
 
     try:
+        empty_frames = 0
+        frame_start_time = time.time()  # real-time pacing reference
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:
-                break
+                empty_frames += 1
+                if empty_frames > 30:
+                    # 30 consecutive read failures — stream is gone. Break cleanly
+                    # so the BackgroundCameraManager retry loop can reconnect.
+                    logger.warning("[VIDEO] 30 consecutive empty frames — stream ended, will retry.")
+                    break
+                await asyncio.sleep(0.05)  # brief wait before next read attempt
+                continue
+            else:
+                empty_frames = 0
 
             frame_count += 1
             
@@ -715,6 +726,16 @@ async def process_video_realtime(video_path, websocket):
                 }
             })
             
+            # ── Real-time pacing ────────────────────────────────────────────
+            # Sleep just enough so that frames reach the client at the video's
+            # native FPS. Without this, the backend blasts all frames instantly,
+            # which fills the browser's network buffer and causes severe lag.
+            elapsed = time.time() - frame_start_time
+            expected = frame_count / fps  # wall-clock seconds at which this frame should arrive
+            pace_sleep = expected - elapsed
+            if pace_sleep > 0:
+                await asyncio.sleep(pace_sleep)
+
             # Log every 30 frames
             if frame_count % 30 == 0:
                 print(f"Processed frame {frame_count}/{total_frames}, Persons: {len(tracked_persons)}")

@@ -3,6 +3,7 @@ from fastapi.responses import JSONResponse, FileResponse, StreamingResponse, Red
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from typing import Optional, List
 import uvicorn
 import os
 import yt_dlp
@@ -22,7 +23,7 @@ from core.auth import (
     AuthService, LoginRequest, RegisterRequest, UpdateUserRequest,
     AuthResponse, get_current_user, require_admin, require_guard_or_admin,
     authenticate_websocket, get_client_ip, get_user_agent,
-    PasswordHasher
+    PasswordHasher, get_current_user_from_query_token
 )
 from core.notifications import initialize_database, NotificationService
 from core import config as app_config
@@ -145,8 +146,18 @@ def ensure_database_ready():
 
 @app.on_event("startup")
 async def startup_event():
-    """Run database checks on startup"""
+    """Run database checks on startup, including cameras table migration."""
     ensure_database_ready()
+    _ensure_cameras_table()
+
+
+def _ensure_cameras_table():
+    """Create cameras table if it doesn't exist (idempotent)."""
+    try:
+        from database.migrate_cameras import run as migrate_cameras
+        migrate_cameras()
+    except Exception as e:
+        logger.warning(f"[CAMERA] Could not auto-migrate cameras table: {e}")
 
 # Initialize database connection
 try:
@@ -491,6 +502,22 @@ async def list_alerts(
     return alerts
 
 
+class DeleteAlertsRequest(BaseModel):
+    alert_ids: List[int]
+
+@app.delete("/api/admin/alerts")
+async def delete_alerts(
+    request: DeleteAlertsRequest,
+    admin: dict = Depends(require_admin)
+):
+    """Delete multiple alerts (Admin only)"""
+    success = Alert.delete_multiple(request.alert_ids)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to delete alerts")
+    AuditLog.log("ALERTS_DELETED", admin['id'], f"Deleted {len(request.alert_ids)} alerts")
+    return {"message": f"Successfully deleted {len(request.alert_ids)} alerts"}
+
+
 # ============================================================================
 # MOBILE CLIENT ENDPOINTS (Protected - Guard/Admin)
 # ============================================================================
@@ -568,6 +595,338 @@ async def acknowledge_alert(
     )
     logger.info(f"[MOBILE] Alert {alert_id} acknowledged by user {current_user['id']}")
     return {"detail": "Alert acknowledged."}
+
+
+# ============================================================================
+# CAMERA REGISTRY ENDPOINTS
+# ============================================================================
+
+class CameraCreate(BaseModel):
+    camera_name: str
+    pool_location: str = "Main Pool"
+    rtsp_url: str
+    hls_url: Optional[str] = None
+    status: str = "active"
+    assigned_guard_id: Optional[int] = None
+
+
+class CameraUpdate(BaseModel):
+    camera_name: Optional[str] = None
+    pool_location: Optional[str] = None
+    rtsp_url: Optional[str] = None
+    hls_url: Optional[str] = None
+    status: Optional[str] = None
+    assigned_guard_id: Optional[int] = None
+
+
+@app.get("/api/cameras")
+async def list_cameras(
+    current_user: dict = Depends(require_guard_or_admin)
+):
+    """
+    Returns all active cameras.
+    Guards receive cameras assigned to them OR unassigned ones.
+    Admins receive all cameras.
+    """
+    try:
+        if current_user["role"] == "admin":
+            rows = db.execute_query(
+                "SELECT id, camera_name, pool_location, rtsp_url, hls_url, status, assigned_guard_id "
+                "FROM cameras ORDER BY id"
+            )
+        else:
+            rows = db.execute_query(
+                "SELECT id, camera_name, pool_location, rtsp_url, hls_url, status, assigned_guard_id "
+                "FROM cameras "
+                "WHERE status = 'active' AND (assigned_guard_id IS NULL OR assigned_guard_id = %s) "
+                "ORDER BY id",
+                (current_user["id"],)
+            )
+        result = []
+        for row in rows:
+            cam = dict(row)
+            # Provide the MJPEG proxy URL the mobile app can consume directly
+            cam["stream_url"] = cam.get("hls_url") or \
+                f"/api/cameras/{cam['id']}/mjpeg"
+            result.append(cam)
+        return result
+    except Exception as e:
+        logger.error(f"[CAMERA] list_cameras error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch cameras.")
+
+
+@app.get("/api/cameras/{camera_id}")
+async def get_camera(
+    camera_id: int,
+    current_user: dict = Depends(require_guard_or_admin)
+):
+    """Get a single camera by ID."""
+    rows = db.execute_query(
+        "SELECT id, camera_name, pool_location, rtsp_url, hls_url, status, assigned_guard_id "
+        "FROM cameras WHERE id = %s",
+        (camera_id,)
+    )
+    if not rows:
+        raise HTTPException(status_code=404, detail="Camera not found.")
+    cam = dict(rows[0])
+    cam["stream_url"] = cam.get("hls_url") or f"/api/cameras/{cam['id']}/mjpeg"
+    return cam
+
+
+@app.get("/api/cameras/{camera_id}/stream")
+async def get_camera_stream_url(
+    camera_id: int,
+    current_user: dict = Depends(require_guard_or_admin)
+):
+    """Returns the streaming URL for a camera (MJPEG proxy or HLS)."""
+    rows = db.execute_query(
+        "SELECT id, camera_name, hls_url, rtsp_url, status FROM cameras WHERE id = %s",
+        (camera_id,)
+    )
+    if not rows:
+        raise HTTPException(status_code=404, detail="Camera not found.")
+    cam = rows[0]
+    if cam["status"] != "active":
+        raise HTTPException(status_code=503, detail="Camera is offline.")
+    stream_url = cam["hls_url"] or f"/api/cameras/{camera_id}/mjpeg"
+    return {
+        "camera_id": camera_id,
+        "camera_name": cam["camera_name"],
+        "stream_url": stream_url,
+        "rtsp_url": cam["rtsp_url"],
+        "protocol": "hls" if cam["hls_url"] else "mjpeg",
+    }
+
+
+@app.get("/api/cameras/{camera_id}/mjpeg")
+async def mjpeg_stream(
+    camera_id: int,
+    current_user: dict = Depends(get_current_user_from_query_token)
+):
+    """
+    MJPEG streaming proxy — pushes frames from the continuous AI process
+    over HTTP. This lets WebViews display the live feed efficiently.
+    """
+    rows = db.execute_query(
+        "SELECT rtsp_url, status FROM cameras WHERE id = %s",
+        (camera_id,)
+    )
+    if not rows:
+        raise HTTPException(status_code=404, detail="Camera not found.")
+    cam = rows[0]
+    if cam["status"] != "active":
+        raise HTTPException(status_code=503, detail="Camera is offline.")
+
+    async def frame_generator():
+        last_frame_no = -1
+        while True:
+            frame_data = BackgroundCameraManager.latest_frames.get(camera_id)
+            if frame_data and frame_data.get('type') == 'frame':
+                frame_no = frame_data.get('frame_number', -1)
+                if frame_no != last_frame_no:
+                    try:
+                        jpg_bytes = base64.b64decode(frame_data['analysis_frame'])
+                        yield (
+                            b"--frame\r\n"
+                            b"Content-Type: image/jpeg\r\n\r\n" + jpg_bytes + b"\r\n"
+                        )
+                        last_frame_no = frame_no
+                    except Exception as e:
+                        logger.error(f"[MJPEG] Error generating frame for camera {camera_id}: {e}")
+            # Never break — stay connected even when the backend is reconnecting
+            # to the RTSP source. The browser <img> / WebView will resume as soon
+            # as new frames arrive, without needing a page reload.
+            await asyncio.sleep(0.033)
+
+    return StreamingResponse(
+        frame_generator(),
+        media_type="multipart/x-mixed-replace; boundary=frame",
+    )
+
+
+# ============================================================================
+# BACKGROUND CONTINUOUS ANALYSIS (CCTV MANAGER)
+# ============================================================================
+
+class HeadlessCameraWebSocket:
+    """A mock WebSocket that takes realtime analysis events from the backend ML engine
+       and broadcasts them to any connected actual clients, or just silently runs."""
+    def __init__(self, camera_id: int):
+        self.camera_id = camera_id
+
+    async def send_json(self, data: dict):
+        # Never cache or forward 'complete' events — they are meaningless for live
+        # CCTV streams and would confuse the frontend into thinking processing ended.
+        if data.get('type') == 'complete':
+            return
+
+        BackgroundCameraManager.latest_frames[self.camera_id] = data
+        
+        subs = BackgroundCameraManager.subscribers.get(self.camera_id, [])
+        disconnected = []
+        for ws in subs:
+            try:
+                await ws.send_json(data)
+            except Exception:
+                disconnected.append(ws)
+                
+        for ws in disconnected:
+            BackgroundCameraManager.unsubscribe(self.camera_id, ws)
+
+    async def close(self, code=None, reason=None):
+        pass
+
+
+class BackgroundCameraManager:
+    tasks: dict[int, asyncio.Task] = {}
+    subscribers: dict[int, list[WebSocket]] = {}
+    latest_frames: dict[int, dict] = {}
+
+    @classmethod
+    async def start_camera(cls, camera_id: int, rtsp_url: str):
+        cls.stop_camera(camera_id)
+        mock_ws = HeadlessCameraWebSocket(camera_id)
+        logger.info(f"[CCTV MANAGER] Starting continuous analysis for Camera ID {camera_id}")
+        
+        async def run_loop():
+            # Retry indefinitely — CCTV must keep running until the camera is
+            # explicitly paused or deleted by the admin. Transient RTSP failures
+            # (network glitches, camera reboots) are expected and should not
+            # permanently disable the stream.
+            consecutive_failures = 0
+            while True:
+                try:
+                    await process_video_realtime(rtsp_url, mock_ws)  # This blocks while streaming
+                    # If it returns gracefully (stream EOF), treat as a soft fail
+                    # and immediately retry (camera may have reconnected).
+                    logger.info(f"[CCTV MANAGER] Camera {camera_id} stream ended. Re-connecting…")
+                    consecutive_failures = 0
+                except asyncio.CancelledError:
+                    # Task was explicitly cancelled (stop_camera or shutdown). Exit cleanly.
+                    logger.info(f"[CCTV MANAGER] Camera {camera_id} task cancelled.")
+                    return
+                except Exception as e:
+                    consecutive_failures += 1
+                    logger.warning(
+                        f"[CCTV MANAGER] Camera {camera_id} loop error (attempt {consecutive_failures}): {e}. Retrying in 5 s…"
+                    )
+
+                # Back-off: 5 s between reconnect attempts regardless of failure type.
+                # The loop never exits on its own — only via CancelledError.
+                backoff = min(5 * consecutive_failures, 60)  # cap at 60 s
+                await asyncio.sleep(backoff if consecutive_failures > 0 else 2)
+                
+        cls.tasks[camera_id] = asyncio.create_task(run_loop())
+
+    @classmethod
+    def stop_camera(cls, camera_id: int):
+        task = cls.tasks.pop(camera_id, None)
+        if task:
+            task.cancel()
+            logger.info(f"[CCTV MANAGER] Stopped analysis for Camera ID {camera_id}")
+
+    @classmethod
+    def subscribe(cls, camera_id: int, ws: WebSocket):
+        if camera_id not in cls.subscribers:
+            cls.subscribers[camera_id] = []
+        cls.subscribers[camera_id].append(ws)
+
+    @classmethod
+    def unsubscribe(cls, camera_id: int, ws: WebSocket):
+        if camera_id in cls.subscribers and ws in cls.subscribers[camera_id]:
+            cls.subscribers[camera_id].remove(ws)
+
+
+@app.on_event("startup")
+async def startup_cctv_manager():
+    """Startup routine. Sets previously active cameras to inactive so they don't auto-connect."""
+    try:
+        db.execute_query("UPDATE cameras SET status = 'inactive' WHERE status = 'active'", fetch=False)
+        logger.info("[CCTV MANAGER] Set all previously active cameras to inactive. Admin must resume them.")
+    except Exception as e:
+        logger.error(f"[CCTV MANAGER] Error starting up: {e}")
+
+@app.on_event("shutdown")
+async def shutdown_cctv_manager():
+    """Gracefully cancel background tasks and mark cameras inactive."""
+    for task in BackgroundCameraManager.tasks.values():
+        task.cancel()
+    try:
+        db.execute_query("UPDATE cameras SET status = 'inactive' WHERE status = 'active'", fetch=False)
+        logger.info("[CCTV MANAGER] Set all active cameras to inactive on shutdown.")
+    except Exception as e:
+        pass
+
+
+@app.post("/api/cameras", status_code=201)
+async def create_camera(
+    body: CameraCreate,
+    admin: dict = Depends(require_admin)
+):
+    """Register a new camera (Admin only)."""
+    try:
+        result = db.execute_query(
+            "INSERT INTO cameras (camera_name, pool_location, rtsp_url, hls_url, status, assigned_guard_id) "
+            "VALUES (%s, %s, %s, %s, %s, %s)",
+            (body.camera_name, body.pool_location, body.rtsp_url,
+             body.hls_url, body.status, body.assigned_guard_id),
+            fetch=False
+        )
+        AuditLog.log("CAMERA_CREATED", admin["id"], f"Camera '{body.camera_name}' registered")
+        
+        # Start background analysis if active
+        if body.status == 'active':
+            # Retrieve generated ID
+            rows = db.execute_query("SELECT id FROM cameras ORDER BY id DESC LIMIT 1")
+            if rows:
+                new_id = rows[0]['id']
+                await BackgroundCameraManager.start_camera(new_id, body.rtsp_url)
+                
+        return {"message": "Camera registered successfully."}
+    except Exception as e:
+        logger.error(f"[CAMERA] create error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to register camera.")
+
+
+@app.patch("/api/cameras/{camera_id}")
+async def update_camera(
+    camera_id: int,
+    body: CameraUpdate,
+    admin: dict = Depends(require_admin)
+):
+    """Update camera details (Admin only)."""
+    updates = {k: v for k, v in body.dict().items() if v is not None}
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update.")
+    set_clause = ", ".join(f"{k} = %s" for k in updates)
+    values = list(updates.values()) + [camera_id]
+    db.execute_query(f"UPDATE cameras SET {set_clause} WHERE id = %s", tuple(values), fetch=False)
+    AuditLog.log("CAMERA_UPDATED", admin["id"], f"Camera ID {camera_id} updated")
+    
+    # Sync with background manager
+    if 'status' in updates or 'rtsp_url' in updates:
+        # fetch latest full row
+        updated_row = db.execute_query("SELECT * FROM cameras WHERE id = %s", (camera_id,))
+        if updated_row:
+            cam = updated_row[0]
+            if cam['status'] == 'active':
+                await BackgroundCameraManager.start_camera(camera_id, cam['rtsp_url'])
+            else:
+                BackgroundCameraManager.stop_camera(camera_id)
+                
+    return {"message": "Camera updated."}
+
+
+@app.delete("/api/cameras/{camera_id}")
+async def delete_camera(
+    camera_id: int,
+    admin: dict = Depends(require_admin)
+):
+    """Delete a camera registration (Admin only)."""
+    db.execute_query("DELETE FROM cameras WHERE id = %s", (camera_id,), fetch=False)
+    AuditLog.log("CAMERA_DELETED", admin["id"], f"Camera ID {camera_id} deleted")
+    BackgroundCameraManager.stop_camera(camera_id)
+    return {"message": "Camera deleted."}
 
 
 # ============================================================================
@@ -679,6 +1038,45 @@ async def analyze_youtube(link: YouTubeLink, current_user: dict = Depends(requir
         logger.error(f"Unexpected error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
+@app.websocket("/ws/camera/{camera_id}")
+async def websocket_continuous_camera(websocket: WebSocket, camera_id: int):
+    """
+    Connect to a continuous analysis stream.
+    Used by the dashboard when 'Analyze with AI' taps into the background CCTV engine.
+    """
+    token = websocket.query_params.get("token")
+    if not token:
+        await websocket.close(code=1008, reason="Authentication required")
+        return
+        
+    try:
+        current_user = await authenticate_websocket(token)
+    except HTTPException as e:
+        await websocket.close(code=1008, reason=str(e.detail))
+        return
+
+    await websocket.accept()
+    BackgroundCameraManager.subscribe(camera_id, websocket)
+    logger.info(f"[WEBSOCKET] User {current_user['name']} subscribed to Camera {camera_id} stream")
+    
+    # Send any immediate existing frame instantly so UI loads fast
+    if camera_id in BackgroundCameraManager.latest_frames:
+        try:
+            await websocket.send_json(BackgroundCameraManager.latest_frames[camera_id])
+        except:
+            pass
+            
+    try:
+        while True:
+            # We keep the connection open, while the Headless mock sends the real updates
+            message = await websocket.receive_text()
+            if message == "ping":
+                await websocket.send_text("pong")
+    except WebSocketDisconnect:
+        logger.info(f"[WEBSOCKET] User disconnected from Camera {camera_id}")
+    finally:
+        BackgroundCameraManager.unsubscribe(camera_id, websocket)
+
 @app.websocket("/ws/process")
 async def websocket_process_video(websocket: WebSocket):
     """
@@ -710,10 +1108,13 @@ async def websocket_process_video(websocket: WebSocket):
             data = await websocket.receive_json()
             video_path = data.get("video_path")
 
-            if not video_path or not os.path.exists(video_path):
+            if not video_path or (
+                not str(video_path).startswith(("rtsp://", "http://", "https://")) and 
+                not os.path.exists(video_path)
+            ):
                 await websocket.send_json({
                     "type": "error",
-                    "message": "Video file not found"
+                    "message": "Video file or stream not found"
                 })
                 continue
 
@@ -722,22 +1123,17 @@ async def websocket_process_video(websocket: WebSocket):
             if not cap.isOpened():
                 await websocket.send_json({
                     "type": "error",
-                    "message": "Could not open video"
+                    "message": "Could not open video stream"
                 })
                 continue
 
-            # Get video properties
-            fps = int(cap.get(cv2.CAP_PROP_FPS))
-            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-            height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-
+            # Send video info just once based on the original request
             await websocket.send_json({
                 "type": "video_info",
-                "fps": fps,
-                "total_frames": total_frames,
-                "width": width,
-                "height": height
+                "fps": int(cap.get(cv2.CAP_PROP_FPS)),
+                "total_frames": int(cap.get(cv2.CAP_PROP_FRAME_COUNT)),
+                "width": int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
+                "height": int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             })
 
             # Process with tracking
@@ -745,8 +1141,8 @@ async def websocket_process_video(websocket: WebSocket):
 
             cap.release()
 
-            # Clean up uploaded file
-            if os.path.exists(video_path):
+            # Clean up uploaded file only if it's a local file
+            if not str(video_path).startswith(("rtsp://", "http://", "https://")) and os.path.exists(video_path):
                 os.remove(video_path)
 
     except WebSocketDisconnect:

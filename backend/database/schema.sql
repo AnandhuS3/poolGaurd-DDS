@@ -12,7 +12,7 @@ USE drowning_detection_db;
 
 -- ============================================================================
 -- Users Table
--- Stores all system users (Admin, Guard, and Regular Users)
+-- Stores all system users (Admin, Guard)
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS users (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -118,6 +118,27 @@ CREATE TABLE IF NOT EXISTS system_config (
     FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL,
     INDEX idx_config_key (config_key)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================================
+-- Cameras Table
+-- Registry of CCTV cameras integrated with the PoolGuard system
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS cameras (
+    id              INT AUTO_INCREMENT PRIMARY KEY,
+    camera_name     VARCHAR(255) NOT NULL,
+    pool_location   VARCHAR(255) NOT NULL DEFAULT 'Main Pool',
+    rtsp_url        VARCHAR(1024) NOT NULL COMMENT 'RTSP stream URL for this camera',
+    hls_url         VARCHAR(1024) NULL     COMMENT 'Optional HLS URL served by streaming gateway (MediaMTX/Nginx)',
+    status          ENUM('active', 'inactive', 'maintenance') NOT NULL DEFAULT 'active',
+    assigned_guard_id INT NULL             COMMENT 'NULL = visible to all guards',
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (assigned_guard_id) REFERENCES users(id) ON DELETE SET NULL,
+    INDEX idx_status (status),
+    INDEX idx_guard  (assigned_guard_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 
 -- ============================================================================
 -- Initial Data
