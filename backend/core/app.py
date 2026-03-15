@@ -804,7 +804,7 @@ class BackgroundCameraManager:
             consecutive_failures = 0
             while True:
                 try:
-                    await process_video_realtime(rtsp_url, mock_ws)  # This blocks while streaming
+                    await process_video_realtime(rtsp_url, mock_ws, external_notification_service=notification_service)  # This blocks while streaming
                     # If it returns gracefully (stream EOF), treat as a soft fail
                     # and immediately retry (camera may have reconnected).
                     logger.info(f"[CCTV MANAGER] Camera {camera_id} stream ended. Re-connecting…")
@@ -1144,8 +1144,9 @@ async def websocket_process_video(websocket: WebSocket):
                 "height": int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             })
 
-            # Process with tracking
-            await process_video_realtime(video_path, websocket)
+            # Process with tracking — pass the database-aware notification service so
+            # alerts are sent via FCM/email to logged-in users AND recorded in the DB.
+            await process_video_realtime(video_path, websocket, external_notification_service=notification_service)
 
             cap.release()
 

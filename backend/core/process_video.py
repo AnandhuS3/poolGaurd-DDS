@@ -244,8 +244,16 @@ else:
     secondary_pose_detector = None
     logger.info("LSTM inference disabled in config")
 
-async def process_video_realtime(video_path, websocket):
-    """Process video with real-time streaming via WebSocket - UPGRADED"""
+async def process_video_realtime(video_path, websocket, external_notification_service=None):
+    """Process video with real-time streaming via WebSocket - UPGRADED
+    
+    Args:
+        video_path: Path to the video file or RTSP URL
+        websocket: WebSocket connection to stream frames to
+        external_notification_service: Optional database-aware NotificationService from app.py.
+            If provided, this is used instead of the module-level config-based one,
+            enabling FCM push notifications, database alert records, and escalation to admin.
+    """
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         await websocket.send_json({
@@ -320,7 +328,8 @@ async def process_video_realtime(video_path, websocket):
         empty_frames = 0
         frame_start_time = time.time()  # real-time pacing reference
         while cap.isOpened():
-            ret, frame = cap.read()
+            # Offload synchronous OpenCV read to a background thread to prevent blocking FastAPI's event loop
+            ret, frame = await asyncio.to_thread(cap.read)
             if not ret:
                 empty_frames += 1
                 if empty_frames > 30:
@@ -363,13 +372,14 @@ async def process_video_realtime(video_path, websocket):
             
             # Run ML detection only if motion detected or required
             if not skip_ml_processing:
+                # Offload heavy ML inference to background threads to prevent FastAPI event loop blocking
                 # YOLO detection with ensemble (if secondary model available)
-                results = model(frame, conf=CONFIDENCE_THRESHOLD, verbose=False)
+                results = await asyncio.to_thread(model, frame, conf=CONFIDENCE_THRESHOLD, verbose=False)
                 
                 # Run secondary model for ensemble detection
                 results_secondary = None
                 if model_secondary:
-                    results_secondary = model_secondary(frame, conf=CONFIDENCE_THRESHOLD, verbose=False)
+                    results_secondary = await asyncio.to_thread(model_secondary, frame, conf=CONFIDENCE_THRESHOLD, verbose=False)
 
                 # Prepare detections for DeepSORT
                 detections = []
@@ -651,12 +661,22 @@ async def process_video_realtime(video_path, websocket):
                             person_data[track_id]["alert_sent"] = True
                             should_notify = True
                         
-                        if should_notify and notification_service:
-                            await notification_service.send_alert(
-                                track_id=track_id,
-                                severity=new_state,
-                                camera_name=CAMERA_NAME
-                            )
+                        if should_notify:
+                            # Prefer the database-aware service injected from app.py (FCM + DB records).
+                            # Fall back to the legacy config-based service if no external one is given.
+                            active_svc = external_notification_service or notification_service
+                            if active_svc:
+                                await active_svc.send_alert(
+                                    track_id=track_id,
+                                    severity=new_state,
+                                    camera_name=CAMERA_NAME
+                                )
+                            else:
+                                logger.warning(
+                                    f"[NOTIFICATION] No notification service available — "
+                                    f"alert for Person #{track_id} ({new_state}) NOT sent. "
+                                    "Check SMTP credentials in .env and NOTIFICATION_ENABLED in config.py."
+                                )
                 
                 # NOTE: Bounding boxes and labels are drawn by the frontend canvas overlay.
                 # Removing all OpenCV drawing here eliminates duplicate rendering and
@@ -689,7 +709,10 @@ async def process_video_realtime(video_path, websocket):
                 })
 
             # Encode raw (unannotated) frame – frontend BoundingOverlay draws all overlays via canvas
-            encode_success, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
+            # Offloaded to thread as image encoding is CPU-heavy
+            encode_success, buffer = await asyncio.to_thread(
+                cv2.imencode, '.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY]
+            )
             if not encode_success:
                 logger.warning(f"Failed to encode frame {frame_count}")
                 continue
