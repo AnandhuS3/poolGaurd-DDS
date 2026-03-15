@@ -14,8 +14,9 @@ import json
 import re
 from core.process_video import process_video_realtime
 import logging
-import mysql.connector
-from mysql.connector import Error
+import psycopg2
+import psycopg2.extras
+from psycopg2 import Error
 
 # Import authentication and database modules
 from core.database import db, User, Session, Alert, AuditLog
@@ -57,7 +58,7 @@ app = FastAPI(title="Drowning Detection System")
 
 @app.exception_handler(RuntimeError)
 async def runtime_error_handler(request: Request, exc: RuntimeError):
-    """Return 503 when the database pool is not available (e.g. MySQL down at startup)"""
+    """Return 503 when the database pool is not available (e.g. database down at startup)"""
     logger.error(f"[SERVER] RuntimeError on {request.url.path}: {exc}")
     return JSONResponse(
         status_code=503,
@@ -73,25 +74,26 @@ def ensure_database_ready():
     """
     logger.info("[DATABASE] Checking database setup...")
     
-    # Step 1: Ensure database exists
+    # Step 1: Ensure tables exist in poolguard_db
     try:
-        conn = mysql.connector.connect(
+        conn = psycopg2.connect(
             host=DB_HOST,
             port=DB_PORT,
             user=DB_USER,
-            password=DB_PASSWORD
+            password=DB_PASSWORD,
+            dbname=DB_NAME,
         )
+        conn.autocommit = True
         cursor = conn.cursor()
-        cursor.execute(f"CREATE DATABASE IF NOT EXISTS {DB_NAME}")
-        cursor.execute(f"USE {DB_NAME}")
-        conn.commit()
-        logger.info(f"[DATABASE] Database '{DB_NAME}' ready")
         
         # Step 2: Check if tables exist
-        cursor.execute("SHOW TABLES")
-        tables = [table[0] for table in cursor.fetchall()]
+        cursor.execute("""
+            SELECT COUNT(*) FROM information_schema.tables
+            WHERE table_schema = 'public' AND table_catalog = %s
+        """, (DB_NAME,))
+        table_count = cursor.fetchone()[0]
         
-        if len(tables) < 5:  # We expect 5 tables
+        if table_count < 5:  # We expect at least 5 tables
             logger.info("[DATABASE] Tables missing, creating from schema.sql...")
             
             # Read and execute schema.sql
@@ -100,22 +102,28 @@ def ensure_database_ready():
                 with open(schema_path, 'r', encoding='utf-8') as f:
                     schema = f.read()
                 
-                # Execute schema statements
+                # Execute schema statements — skip legacy directives
                 statements = [s.strip() for s in schema.split(';') if s.strip()]
                 for statement in statements:
-                    if statement and not statement.startswith('--'):
-                        try:
-                            cursor.execute(statement)
-                        except Error as e:
-                            if "already exists" not in str(e).lower():
-                                logger.warning(f"[DATABASE] Schema warning: {e}")
+                    stmt = statement.strip()
+                    if not stmt or stmt.startswith('--'):
+                        continue
+                    # Skip legacy directives
+                    upper = stmt.upper()
+                    if upper.startswith('DELIMITER') or upper.startswith('USE '):
+                        continue
+                    try:
+                        cursor.execute(stmt)
+                    except Exception as e:
+                        if "already exists" not in str(e).lower():
+                            logger.warning(f"[DATABASE] Schema warning: {e}")
                 
                 conn.commit()
                 logger.info("[DATABASE] Tables created successfully")
             else:
                 logger.warning("[DATABASE] schema.sql not found, skipping table creation")
         else:
-            logger.info(f"[DATABASE] Found {len(tables)} tables")
+            logger.info(f"[DATABASE] Found {table_count} tables")
         
         # Step 3: Check if admin user exists
         cursor.execute("SELECT COUNT(*) FROM users WHERE role = 'admin'")
@@ -140,7 +148,7 @@ def ensure_database_ready():
         conn.close()
         logger.info("[DATABASE] [OK] Database ready!")
         
-    except Error as e:
+    except Exception as e:
         logger.error(f"[DATABASE] [ERROR] Setup error: {e}")
         raise
 
@@ -171,7 +179,7 @@ try:
     )
     # Initialize notification system with database models
     initialize_database(Session, User, Alert, AuditLog)
-    logger.info("[DATABASE] Successfully connected to MySQL")
+    logger.info("[DATABASE] Successfully connected to PostgreSQL")
 except Exception as e:
     logger.error(f"[DATABASE] Failed to initialize: {e}")
     logger.warning("[DATABASE] Running without authentication support")

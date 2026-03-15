@@ -151,6 +151,11 @@ secrets.json
 *.key
 *.pem
 *.crt
+# Firebase Admin SDK service account (contains private key — NEVER commit)
+*firebase-sa*.json
+*service-account*.json
+*serviceAccount*.json
+backend/config/firebase-sa.json
 
 # Project specific
 config/credentials.py

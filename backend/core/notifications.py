@@ -16,7 +16,32 @@ from email.mime.multipart import MIMEMultipart
 from datetime import datetime
 from typing import Optional, Dict, List
 
+try:
+    import firebase_admin
+    from firebase_admin import messaging
+    from firebase_admin import credentials
+    FIREBASE_ENABLED = True
+except ImportError:
+    FIREBASE_ENABLED = False
+
 logger = logging.getLogger(__name__)
+
+# Initialize Firebase App using service account, if available
+if FIREBASE_ENABLED and not firebase_admin._apps:
+    try:
+        import os
+        sa_path = os.getenv("FIREBASE_SA_PATH", "")
+        if sa_path and os.path.exists(sa_path):
+            cred = credentials.Certificate(sa_path)
+            firebase_admin.initialize_app(cred)
+            logger.info(f"[NOTIFICATION] Firebase initialized with service account: {sa_path}")
+        else:
+            # Falls back to GOOGLE_APPLICATION_CREDENTIALS env var
+            firebase_admin.initialize_app()
+            logger.info("[NOTIFICATION] Firebase initialized with default application credentials")
+    except Exception as e:
+        FIREBASE_ENABLED = False
+        logger.warning(f"[NOTIFICATION] Firebase initialization failed — push notifications disabled: {e}")
 
 # Import database models (will be set by initialize_database)
 _db_session = None
@@ -126,19 +151,23 @@ class NotificationService:
             
             message = self._format_message(track_id, severity, camera_name, timestamp, recipients)
             
-            # Send notification based on type (email only; SMS/WhatsApp removed)
+            # Send Email Notifications
             if self.notification_type in ("email", "sms", "whatsapp"):
                 await self._send_email(message, severity, recipients)
             else:
                 logger.error(f"[NOTIFICATION] Unknown notification type: {self.notification_type}")
                 return
             
+            # ALWAYS attempt to send Push Notifications (FCM) to the mobile client
+            # The mobile app relies entirely on this for triggering alarms.
+            await self._send_push_notification(recipients, track_id, severity, camera_name, alert_id)
+            
             # Mark notification as sent in database
             if alert_id and _db_alert:
-                _db_alert.mark_notification_sent(alert_id, self.notification_type)
+                _db_alert.mark_notification_sent(alert_id, f"{self.notification_type}+fcm")
             
             recipient_info = f"{recipients['name']} ({recipients['role']})"
-            logger.info(f"[NOTIFICATION] ✓ Sent {severity} alert for Person #{track_id} to {recipient_info} via {self.notification_type}")
+            logger.info(f"[NOTIFICATION] ✓ Sent {severity} alert for Person #{track_id} to {recipient_info} via {self.notification_type} and FCM")
             
         except Exception as e:
             # FAILURE SAFETY - Log error but DO NOT crash processing
@@ -337,6 +366,73 @@ Check camera feed and respond immediately if assistance needed.
         except Exception as e:
             logger.error(f"[NOTIFICATION] ✗ Email send failed: {e}")
             raise
+
+    async def _send_push_notification(self, recipients: Dict, track_id: int, severity: str, camera_name: str, alert_id: Optional[int]):
+        """
+        Send FCM push notifications to all active users with registered devices.
+        
+        Args:
+            recipients: Recipients dict with 'all_users' list
+            track_id: Person tracking ID
+            severity: Alert severity (warning/danger)
+            camera_name: Camera name
+            alert_id: Database Alert ID
+        """
+        if not FIREBASE_ENABLED:
+            logger.warning("[NOTIFICATION] Firebase Admin is not installed or enabled. Skipping push notification.")
+            return
+
+        try:
+            timestamp = datetime.now().isoformat()
+            
+            # The Flutter app expects certain fields in the data payload:
+            # track_id, state, duration, confidence, camera_id, alert_id, timestamp
+            data_payload = {
+                "track_id": str(track_id),
+                "state": severity.lower(),
+                "duration": "0.0",
+                "confidence": "95.0", # Mocked unless passed in
+                "camera_id": str(camera_name),
+                "alert_id": str(alert_id) if alert_id else "0",
+                "timestamp": timestamp
+            }
+
+            all_users = recipients.get('all_users', [recipients])
+            tokens = [user.get('fcm_token') for user in all_users if user.get('fcm_token')]
+
+            if not tokens:
+                logger.info("[NOTIFICATION] No FCM tokens found for active users. Skipping push notification.")
+                return
+
+            # Prepare message
+            # For background/foreground FCM, we use a data-only message and let the Flutter app 
+            # construct the local notification if it's in the foreground, or use FCM's default if background.
+            # But here we will explicitly send a notification payload so iOS/Android display it automatically when in background.
+            
+            title = '🚨 DANGER — Possible drowning detected' if severity.upper() == "DANGER" else '⚠️ WARNING — Suspicious behaviour'
+            body = f'Track {track_id} — {camera_name}'
+
+            message = messaging.MulticastMessage(
+                notification=messaging.Notification(
+                    title=title,
+                    body=body
+                ),
+                data=data_payload,
+                tokens=tokens
+            )
+
+            # Send multicast message
+            response = messaging.send_each_for_multicast(message)
+            logger.info(f"[NOTIFICATION] ✓ FCM Push sent to {response.success_count} device(s). Failed: {response.failure_count}")
+            
+            if response.failure_count > 0:
+                for idx, resp in enumerate(response.responses):
+                    if not resp.success:
+                        logger.error(f"[NOTIFICATION] FCM Push failed for token {tokens[idx]}: {resp.exception}")
+
+        except Exception as e:
+            logger.error(f"[NOTIFICATION] ✗ FCM Push send failed: {e}")
+            # Do not raise, we don't want to crash the loop
     
     def _get_config_value(self, key: str, default=None):
         """Get config value (supports both dict-like and module config)"""

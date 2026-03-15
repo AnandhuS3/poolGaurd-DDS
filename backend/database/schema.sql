@@ -1,216 +1,207 @@
 -- ============================================================================
--- Drowning Detection System - Database Schema (India Edition)
--- MySQL 8.0+ compatible | Timezone: IST (Asia/Kolkata)
+-- Drowning Detection System - Database Schema (PostgreSQL Edition)
+-- PostgreSQL 14+ compatible | Timezone: IST (Asia/Kolkata)
 -- ============================================================================
 
--- Create database if not exists
-CREATE DATABASE IF NOT EXISTS drowning_detection_db 
-    CHARACTER SET utf8mb4 
-    COLLATE utf8mb4_unicode_ci;
+-- ============================================================================
+-- Custom ENUM Types
+-- ============================================================================
+DO $$ BEGIN
+    CREATE TYPE user_role AS ENUM ('admin', 'guard');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
-USE drowning_detection_db;
+DO $$ BEGIN
+    CREATE TYPE alert_type_enum AS ENUM ('warning', 'danger');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+    CREATE TYPE camera_status_enum AS ENUM ('active', 'inactive', 'maintenance');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- ============================================================================
 -- Users Table
 -- Stores all system users (Admin, Guard)
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS users (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    email VARCHAR(255) NOT NULL UNIQUE,
-    phone_number VARCHAR(20) NOT NULL DEFAULT '',
-    password_hash VARCHAR(255) NOT NULL,
-    role ENUM('admin', 'guard') NOT NULL DEFAULT 'guard',
-    is_active BOOLEAN NOT NULL DEFAULT TRUE,
-    is_system_admin BOOLEAN NOT NULL DEFAULT FALSE,
-    -- Email verification (added for hardened auth)
-    email_verified BOOLEAN NOT NULL DEFAULT FALSE,
-    verification_token VARCHAR(255) NULL,
-    verification_token_expiry DATETIME NULL,
+    id                        SERIAL PRIMARY KEY,
+    name                      VARCHAR(255) NOT NULL,
+    email                     VARCHAR(255) NOT NULL UNIQUE,
+    phone_number              VARCHAR(20)  NOT NULL DEFAULT '',
+    password_hash             VARCHAR(255) NOT NULL,
+    role                      user_role    NOT NULL DEFAULT 'guard',
+    is_active                 BOOLEAN      NOT NULL DEFAULT TRUE,
+    is_system_admin           BOOLEAN      NOT NULL DEFAULT FALSE,
+    -- Email verification
+    email_verified            BOOLEAN      NOT NULL DEFAULT FALSE,
+    verification_token        VARCHAR(255) NULL,
+    verification_token_expiry TIMESTAMP    NULL,
     -- Password reset
-    password_reset_token VARCHAR(255) NULL,
-    password_reset_expiry DATETIME NULL,
+    password_reset_token      VARCHAR(255) NULL,
+    password_reset_expiry     TIMESTAMP    NULL,
     -- Mobile push notifications (FCM device token)
-    fcm_token VARCHAR(255) NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    
-    INDEX idx_email (email),
-    INDEX idx_role (role),
-    INDEX idx_is_active (is_active),
-    INDEX idx_system_admin (is_system_admin),
-    INDEX idx_verification_token (verification_token),
-    INDEX idx_reset_token (password_reset_token)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    fcm_token                 VARCHAR(255) NULL,
+    created_at                TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at                TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_email              ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_role               ON users(role);
+CREATE INDEX IF NOT EXISTS idx_users_is_active          ON users(is_active);
+CREATE INDEX IF NOT EXISTS idx_users_system_admin       ON users(is_system_admin);
+CREATE INDEX IF NOT EXISTS idx_users_verification_token ON users(verification_token);
+CREATE INDEX IF NOT EXISTS idx_users_reset_token        ON users(password_reset_token);
 
 -- ============================================================================
 -- Active Sessions Table
 -- Tracks currently logged-in users
--- Only one active session per user at a time (enforced by application logic)
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS active_sessions (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    user_id INT NOT NULL,
-    login_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    id          SERIAL PRIMARY KEY,
+    user_id     INTEGER  NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    login_time  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     logout_time TIMESTAMP NULL,
-    is_active BOOLEAN NOT NULL DEFAULT TRUE,
-    ip_address VARCHAR(45) NULL,
-    user_agent TEXT NULL,
-    
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-    INDEX idx_user_active (user_id, is_active),
-    INDEX idx_is_active (is_active)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    is_active   BOOLEAN   NOT NULL DEFAULT TRUE,
+    ip_address  VARCHAR(45) NULL,
+    user_agent  TEXT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_user_active ON active_sessions(user_id, is_active);
+CREATE INDEX IF NOT EXISTS idx_sessions_is_active   ON active_sessions(is_active);
 
 -- ============================================================================
 -- Alerts Table
 -- Records all drowning alerts triggered by the system
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS alerts (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    user_id INT NULL,                           -- FK to user who was logged in
-    track_id INT NOT NULL,                      -- Person tracking ID from detection system
-    alert_type ENUM('warning', 'danger') NOT NULL,
-    triggered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    resolved_at TIMESTAMP NULL,
-    notification_sent BOOLEAN DEFAULT FALSE,
-    notification_method VARCHAR(50) NULL,        -- email, sms, whatsapp
-    escalated_to_admin BOOLEAN DEFAULT FALSE,    -- TRUE if no guard was logged in
-    camera_name VARCHAR(255) DEFAULT 'Main Camera',
-    
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
-    INDEX idx_user_id (user_id),
-    INDEX idx_triggered_at (triggered_at),
-    INDEX idx_alert_type (alert_type),
-    INDEX idx_track_id (track_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    id                  SERIAL PRIMARY KEY,
+    user_id             INTEGER          NULL REFERENCES users(id) ON DELETE SET NULL,
+    track_id            INTEGER          NOT NULL,
+    alert_type          alert_type_enum  NOT NULL,
+    triggered_at        TIMESTAMP        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    resolved_at         TIMESTAMP        NULL,
+    notification_sent   BOOLEAN          NOT NULL DEFAULT FALSE,
+    notification_method VARCHAR(50)      NULL,
+    escalated_to_admin  BOOLEAN          NOT NULL DEFAULT FALSE,
+    camera_name         VARCHAR(255)     NOT NULL DEFAULT 'Main Camera'
+);
+
+CREATE INDEX IF NOT EXISTS idx_alerts_user_id     ON alerts(user_id);
+CREATE INDEX IF NOT EXISTS idx_alerts_triggered   ON alerts(triggered_at);
+CREATE INDEX IF NOT EXISTS idx_alerts_type        ON alerts(alert_type);
+CREATE INDEX IF NOT EXISTS idx_alerts_track_id    ON alerts(track_id);
 
 -- ============================================================================
 -- Audit Logs Table
 -- Records authentication and system events for security auditing
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS audit_logs (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    user_id INT NULL,
-    action VARCHAR(100) NOT NULL,               -- LOGIN, LOGOUT, ALERT_SENT, USER_CREATED, etc.
-    details TEXT NULL,
-    ip_address VARCHAR(45) NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
-    INDEX idx_user_id (user_id),
-    INDEX idx_action (action),
-    INDEX idx_created_at (created_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    id         SERIAL PRIMARY KEY,
+    user_id    INTEGER      NULL REFERENCES users(id) ON DELETE SET NULL,
+    action     VARCHAR(100) NOT NULL,
+    details    TEXT         NULL,
+    ip_address VARCHAR(45)  NULL,
+    created_at TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_user_id   ON audit_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_action    ON audit_logs(action);
+CREATE INDEX IF NOT EXISTS idx_audit_created   ON audit_logs(created_at);
 
 -- ============================================================================
 -- System Configuration Table
 -- Stores system-level settings manageable by Admin
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS system_config (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    config_key VARCHAR(100) NOT NULL UNIQUE,
-    config_value TEXT NOT NULL,
-    description TEXT NULL,
-    updated_by INT NULL,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    
-    FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL,
-    INDEX idx_config_key (config_key)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    id           SERIAL PRIMARY KEY,
+    config_key   VARCHAR(100) NOT NULL UNIQUE,
+    config_value TEXT         NOT NULL,
+    description  TEXT         NULL,
+    updated_by   INTEGER      NULL REFERENCES users(id) ON DELETE SET NULL,
+    updated_at   TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_sysconfig_key ON system_config(config_key);
 
 -- ============================================================================
 -- Cameras Table
 -- Registry of CCTV cameras integrated with the PoolGuard system
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS cameras (
-    id              INT AUTO_INCREMENT PRIMARY KEY,
-    camera_name     VARCHAR(255) NOT NULL,
-    pool_location   VARCHAR(255) NOT NULL DEFAULT 'Main Pool',
-    rtsp_url        VARCHAR(1024) NOT NULL COMMENT 'RTSP stream URL for this camera',
-    hls_url         VARCHAR(1024) NULL     COMMENT 'Optional HLS URL served by streaming gateway (MediaMTX/Nginx)',
-    status          ENUM('active', 'inactive', 'maintenance') NOT NULL DEFAULT 'active',
-    assigned_guard_id INT NULL             COMMENT 'NULL = visible to all guards',
-    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    id                SERIAL PRIMARY KEY,
+    camera_name       VARCHAR(255)        NOT NULL,
+    pool_location     VARCHAR(255)        NOT NULL DEFAULT 'Main Pool',
+    rtsp_url          VARCHAR(1024)       NOT NULL,
+    hls_url           VARCHAR(1024)       NULL,
+    status            camera_status_enum  NOT NULL DEFAULT 'active',
+    assigned_guard_id INTEGER             NULL REFERENCES users(id) ON DELETE SET NULL,
+    created_at        TIMESTAMP           NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at        TIMESTAMP           NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 
-    FOREIGN KEY (assigned_guard_id) REFERENCES users(id) ON DELETE SET NULL,
-    INDEX idx_status (status),
-    INDEX idx_guard  (assigned_guard_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE INDEX IF NOT EXISTS idx_cameras_status ON cameras(status);
+CREATE INDEX IF NOT EXISTS idx_cameras_guard  ON cameras(assigned_guard_id);
 
+-- ============================================================================
+-- Auto-update updated_at trigger
+-- ============================================================================
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_users_updated_at   ON users;
+CREATE TRIGGER trg_users_updated_at
+    BEFORE UPDATE ON users
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+DROP TRIGGER IF EXISTS trg_cameras_updated_at ON cameras;
+CREATE TRIGGER trg_cameras_updated_at
+    BEFORE UPDATE ON cameras
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+DROP TRIGGER IF EXISTS trg_sysconfig_updated_at ON system_config;
+CREATE TRIGGER trg_sysconfig_updated_at
+    BEFORE UPDATE ON system_config
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- ============================================================================
 -- Initial Data
--- Create default admin user (password: admin123)
--- IMPORTANT: Change this password immediately in production!
 -- ============================================================================
 
 -- Default admin user (password: admin123)
 -- Password hash generated using bcrypt with cost factor 12
-INSERT INTO users (name, email, phone_number, password_hash, role, is_active, is_system_admin) 
+INSERT INTO users (name, email, phone_number, password_hash, role, is_active, is_system_admin, email_verified)
 VALUES (
     'System Administrator',
     'creagoouon@gmail.com',
     '+1234567890',
-    '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5GyYqMvFj9nPu',  -- admin123
+    '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5GyYqMvFj9nPu',
     'admin',
     TRUE,
+    TRUE,
     TRUE
-) ON DUPLICATE KEY UPDATE id=id;
+) ON CONFLICT (email) DO NOTHING;
 
 -- Default system configuration
 INSERT INTO system_config (config_key, config_value, description) VALUES
-    ('site_name', 'Drowning Detection System', 'System display name'),
-    ('max_concurrent_guards', '5', 'Maximum number of guards that can be logged in simultaneously'),
-    ('alert_retention_days', '90', 'Number of days to keep alert records'),
+    ('site_name',               'PoolGuard Drowning Detection System',  'System display name'),
+    ('max_concurrent_guards',   '5',   'Maximum guards logged in simultaneously'),
+    ('alert_retention_days',    '90',  'Days to keep alert records'),
     ('session_timeout_minutes', '480', 'Session timeout in minutes (8 hours)')
-ON DUPLICATE KEY UPDATE config_key=config_key;
-
--- ============================================================================
--- Stored Procedures
--- ============================================================================
-
--- Procedure to get currently active guard users
-DELIMITER //
-CREATE PROCEDURE IF NOT EXISTS GetActiveGuards()
-BEGIN
-    SELECT u.id, u.name, u.email, u.phone_number, s.login_time
-    FROM users u
-    INNER JOIN active_sessions s ON u.id = s.user_id
-    WHERE u.role = 'guard' 
-      AND u.is_active = TRUE 
-      AND s.is_active = TRUE
-    ORDER BY s.login_time ASC;
-END //
-DELIMITER ;
-
--- Procedure to log out all sessions for a user
-DELIMITER //
-CREATE PROCEDURE IF NOT EXISTS LogoutUser(IN p_user_id INT)
-BEGIN
-    UPDATE active_sessions 
-    SET is_active = FALSE, logout_time = CURRENT_TIMESTAMP
-    WHERE user_id = p_user_id AND is_active = TRUE;
-END //
-DELIMITER ;
-
--- Procedure to clean up old sessions (older than 30 days)
-DELIMITER //
-CREATE PROCEDURE IF NOT EXISTS CleanupOldSessions()
-BEGIN
-    DELETE FROM active_sessions 
-    WHERE logout_time < DATE_SUB(NOW(), INTERVAL 30 DAY);
-END //
-DELIMITER ;
+ON CONFLICT (config_key) DO NOTHING;
 
 -- ============================================================================
 -- Views
 -- ============================================================================
 
--- View for active users with session info
 CREATE OR REPLACE VIEW v_active_users AS
-SELECT 
+SELECT
     u.id,
     u.name,
     u.email,
@@ -222,27 +213,20 @@ FROM users u
 INNER JOIN active_sessions s ON u.id = s.user_id
 WHERE u.is_active = TRUE AND s.is_active = TRUE;
 
--- View for alert summary
 CREATE OR REPLACE VIEW v_alert_summary AS
-SELECT 
+SELECT
     a.id,
     a.track_id,
     a.alert_type,
     a.triggered_at,
     a.resolved_at,
-    u.name AS assigned_user,
-    u.role AS user_role,
+    u.name  AS assigned_user,
+    u.role  AS user_role,
     a.escalated_to_admin,
     a.notification_sent
 FROM alerts a
 LEFT JOIN users u ON a.user_id = u.id
 ORDER BY a.triggered_at DESC;
-
--- ============================================================================
--- Grants (adjust as needed for your MySQL user)
--- ============================================================================
--- GRANT ALL PRIVILEGES ON drowning_detection_db.* TO 'dds_user'@'localhost';
--- FLUSH PRIVILEGES;
 
 -- ============================================================================
 -- End of Schema

@@ -1,13 +1,13 @@
 """
-Migration: Mobile FCM Device Token
+Migration: Mobile FCM Device Token (PostgreSQL)
 Adds fcm_token column to the users table for push notification support.
 
 Usage:
     cd backend
     python database/migrate_mobile_fcm.py
 """
-import mysql.connector
-from mysql.connector import Error
+import psycopg2
+from psycopg2 import Error
 import sys
 import os
 
@@ -18,46 +18,43 @@ from core.config import DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME
 
 MIGRATIONS = [
     (
-        "ALTER TABLE users ADD COLUMN fcm_token VARCHAR(255) NULL",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS fcm_token VARCHAR(255) NULL",
         "fcm_token",
     ),
 ]
 
 
-def column_exists(cursor, table: str, column: str) -> bool:
-    cursor.execute(
-        "SELECT COUNT(*) FROM information_schema.COLUMNS "
-        "WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = %s",
-        (DB_NAME, table, column),
-    )
-    return cursor.fetchone()[0] > 0
-
-
 def run():
+    conn = None
     try:
-        conn = mysql.connector.connect(
+        conn = psycopg2.connect(
             host=DB_HOST, port=DB_PORT,
             user=DB_USER, password=DB_PASSWORD,
-            database=DB_NAME,
+            dbname=DB_NAME,
         )
+        conn.autocommit = True
         cursor = conn.cursor()
         print(f"[MIGRATION] Connected to '{DB_NAME}'")
 
         for sql, column in MIGRATIONS:
-            if column_exists(cursor, "users", column):
-                print(f"[MIGRATION] Column '{column}' already exists — skipping.")
-            else:
+            try:
                 cursor.execute(sql)
-                conn.commit()
-                print(f"[MIGRATION] Added column '{column}'.")
+                print(f"[MIGRATION] Applied: '{column}'.")
+            except Error as e:
+                if "already exists" in str(e).lower():
+                    print(f"[MIGRATION] Column '{column}' already exists — skipping.")
+                else:
+                    print(f"[MIGRATION] Error on '{column}': {e}")
 
         cursor.close()
-        conn.close()
         print("[MIGRATION] Done.")
 
     except Error as e:
         print(f"[MIGRATION] Error: {e}")
         sys.exit(1)
+    finally:
+        if conn:
+            conn.close()
 
 
 if __name__ == "__main__":

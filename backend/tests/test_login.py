@@ -1,14 +1,21 @@
-"""Test admin login credentials"""
+"""Test admin login credentials (PostgreSQL)"""
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+
 from core.auth import PasswordHasher
-import mysql.connector
+import psycopg2
+from core.credentials import DB_USER, DB_PASSWORD
 
 # Connect to database
-conn = mysql.connector.connect(
+conn = psycopg2.connect(
     host='localhost',
-    user='root',
-    password='1234@1234qQ',
-    database='drowning_detection_db'
+    port=5432,
+    user=DB_USER,
+    password=DB_PASSWORD,
+    dbname='poolguard_db'
 )
+conn.autocommit = True
 cursor = conn.cursor()
 
 # Get admin user
@@ -32,7 +39,6 @@ if result:
         print("\n⚠️  Password mismatch! Creating new hash...")
         new_hash = PasswordHasher.hash_password('admin123')
         cursor.execute('UPDATE users SET password_hash = %s WHERE email = %s', (new_hash, 'creagoouon@gmail.com'))
-        conn.commit()
         print("✅ Password reset to: admin123")
 else:
     print("❌ No admin user found!")

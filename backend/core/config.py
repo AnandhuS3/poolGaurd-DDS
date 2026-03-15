@@ -31,12 +31,12 @@ FRONTEND_DIR = BASE_DIR / "frontend"
 # ============================================================================
 # DATABASE CONFIGURATION
 # ============================================================================
-# MySQL database settings for authentication and alerting
+# PostgreSQL database settings for authentication and alerting
 # DB_USER and DB_PASSWORD imported from credentials.py
 DB_HOST = "localhost"
-DB_PORT = 3306
-DB_NAME = "drowning_detection_db"
-DB_POOL_SIZE = 5  # Connection pool size
+DB_PORT = 5432
+DB_NAME = "poolguard_db"
+DB_POOL_SIZE = int(os.getenv("DB_POOL_SIZE", "20"))  # Connection pool size (raised from 5 for prod)
 
 # ============================================================================
 # SERVER SETTINGS
@@ -121,6 +121,11 @@ NOTIFICATION_TYPE = "email"
 
 # Camera/Source identifier for notifications
 CAMERA_NAME = "Main Pool Camera"
+
+# Firebase Admin SDK — path to service account JSON
+# Download from Firebase Console > Project Settings > Service Accounts
+# Set GOOGLE_APPLICATION_CREDENTIALS env var OR put path here.
+FIREBASE_SA_PATH = os.getenv("FIREBASE_SA_PATH", "")
 
 # Email Configuration (SMTP)
 # SMTP_USERNAME and SMTP_PASSWORD imported from credentials.py

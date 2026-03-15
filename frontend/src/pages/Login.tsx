@@ -97,7 +97,7 @@ export function Login() {
         </form>
 
         <p className="text-center text-[#6B7280] text-xs mt-4">
-          Default admin: creagoouon@gmail.com / Admin1234
+          Default admin: creagoouon@gmail.com / admin123
         </p>
         <p className="text-center text-[#6B7280] text-xs mt-2">
           Don't have an account?{' '}

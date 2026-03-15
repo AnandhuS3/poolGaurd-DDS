@@ -23,8 +23,9 @@ yt-dlp>=2023.12.30
 # Utilities
 pydantic==2.5.3
 
+
 # Authentication & Database
-mysql-connector-python==8.2.0
+psycopg2-binary==2.9.11
 PyJWT==2.8.0
 bcrypt==4.1.2
 python-jose[cryptography]==3.3.0
@@ -39,3 +40,6 @@ pytz==2024.1
 
 # Environment Variables (Secure Credentials)
 python-dotenv==1.0.0
+
+# Firebase Cloud Messaging
+firebase-admin>=6.4.0

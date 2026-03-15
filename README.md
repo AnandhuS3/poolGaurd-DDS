@@ -56,7 +56,7 @@ The system is split into a FastAPI backend and a React SPA frontend. All communi
 | Object tracking | DeepSORT Realtime |
 | Behavior model | PyTorch LSTM |
 | Video ingestion | yt-dlp |
-| Database | MySQL 8 with connection pooling |
+| Database | PostgreSQL 14+ with connection pooling |
 | Authentication | PyJWT, bcrypt, python-jose |
 | Frontend | React 19, TypeScript, Vite, Tailwind CSS, Axios |
 | Real-time comms | WebSockets (native FastAPI) |
@@ -73,7 +73,7 @@ v5-poss/
 │   ├── core/
 │   │   ├── app.py                   # FastAPI application & all routes
 │   │   ├── auth.py                  # JWT, bcrypt, RBAC middleware
-│   │   ├── database.py              # MySQL connection pool & models
+│   │   ├── database.py              # PostgreSQL connection pool & models
 │   │   ├── process_video.py         # Detection & tracking pipeline
 │   │   ├── pose_driven_processor.py # Pose + LSTM behavior pipeline
 │   │   ├── pose_estimation/         # YOLOv8-Pose utilities
@@ -86,7 +86,7 @@ v5-poss/
 │   │   ├── logging_config.py        # Structured logging setup
 │   │   └── region_utils.py          # Detection region helpers
 │   ├── database/
-│   │   ├── schema.sql               # Full MySQL schema
+│   │   ├── schema.sql               # Full PostgreSQL schema
 │   │   ├── init_database.py         # Database initialisation script
 │   │   └── create_user.py           # CLI user creation utility
 │   └── config/
@@ -162,7 +162,7 @@ v5-poss/
 
 - Python 3.8 or higher
 - Node.js 18 or higher
-- MySQL 8.0 or higher
+- PostgreSQL 14.0 or higher
 - GPU with CUDA support (recommended for real-time performance)
 - Model weights placed in `assets/weights/` — `best.pt`, `best1.pt`, `yolov8n-pose.pt`
 
@@ -171,7 +171,7 @@ v5-poss/
 1. Create and activate a Python virtual environment.
 2. Install dependencies from `backend/config/requirements.txt`.
 3. Copy `config/.env.example` to `config/.env` and populate database credentials, SMTP settings, JWT secret, and timezone.
-4. Run `backend/database/init_database.py` to initialise the MySQL schema.
+4. Run `backend/database/init_database.py` to initialise the PostgreSQL schema.
 5. Start the server with `python main.py` from the `backend/` directory.
 
 ### Frontend
@@ -229,7 +229,7 @@ Key parameters in `backend/core/config.py`:
 | Symptom | Resolution |
 |---|---|
 | Import or package errors | Re-install from `requirements.txt` with `--upgrade` |
-| Database connection failure | Verify MySQL is running; check `.env` credentials |
+| Database connection failure | Verify PostgreSQL is running; check `.env` credentials |
 | Model file not found | Confirm weight files exist under `assets/weights/` |
 | Slow or dropped frames | Enable CUDA GPU, increase `FRAME_SKIP`, lower JPEG quality |
 | WebSocket disconnects | Verify port availability and that a valid JWT is being passed |
@@ -254,4 +254,4 @@ Extended documentation is available in `doc/`:
 
 ## Built With
 
-FastAPI · Ultralytics YOLOv8 · PyTorch · DeepSORT · OpenCV · MySQL · WebSockets · React · TypeScript · Tailwind CSS · Vite
+FastAPI · Ultralytics YOLOv8 · PyTorch · DeepSORT · OpenCV · PostgreSQL · WebSockets · React · TypeScript · Tailwind CSS · Vite

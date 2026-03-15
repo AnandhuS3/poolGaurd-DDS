@@ -1,111 +1,117 @@
 """
-Database Initialization Script
-Run this script to set up the MySQL database and create the initial admin user
+Database Initialization Script (PostgreSQL)
+Run this script to set up the PostgreSQL database and create the initial admin user.
 """
-import mysql.connector
-from mysql.connector import Error
+import psycopg2
+from psycopg2 import Error
 import sys
 import os
 
 # Add parent directory to path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 
 def read_sql_file(filename):
     """Read SQL file and return contents"""
     with open(filename, 'r', encoding='utf-8') as f:
         return f.read()
 
-def execute_sql_script(cursor, sql_script):
+
+def execute_sql_script(cursor, conn, sql_script):
     """Execute multiple SQL statements from a script"""
-    # Split by semicolon and filter empty statements
+    # Split by semicolons and filter empty/comment-only chunks
     statements = [s.strip() for s in sql_script.split(';') if s.strip()]
-    
+
     for statement in statements:
-        # Skip comments and empty lines
+        # Skip pure comment blocks
         if statement.startswith('--') or not statement:
             continue
-        
-        # Handle DELIMITER statements for stored procedures
-        if 'DELIMITER' in statement.upper():
+
+        # Skip legacy directives (just in case the old file is used)
+        upper = statement.upper()
+        if upper.startswith('DELIMITER') or upper.startswith('USE '):
             continue
-            
+
         try:
             cursor.execute(statement)
-            print(f"✓ Executed: {statement[:50]}...")
+            conn.commit()
+            print(f"✓ Executed: {statement[:60]}...")
         except Error as e:
-            # Continue on some expected errors
-            if "already exists" in str(e).lower():
-                print(f"⚠ Skipped (already exists): {statement[:50]}...")
+            conn.rollback()
+            if "already exists" in str(e).lower() or "duplicate" in str(e).lower():
+                print(f"⚠ Skipped (already exists): {statement[:60]}...")
             else:
                 print(f"✗ Error: {e}")
-                print(f"  Statement: {statement[:100]}...")
+                print(f"  Statement: {statement[:120]}...")
+
 
 def initialize_database():
     """Initialize the database with schema"""
     print("=" * 60)
-    print("  Database Initialization for Drowning Detection System")
+    print("  Database Initialization for PoolGuard (PostgreSQL)")
     print("=" * 60)
     print()
-    
+
     # Get database credentials
-    print("Enter MySQL connection details:")
+    print("Enter PostgreSQL connection details:")
     host = input("Host [localhost]: ").strip() or "localhost"
-    port = input("Port [3306]: ").strip() or "3306"
-    user = input("Username [root]: ").strip() or "root"
+    port = input("Port [5432]: ").strip() or "5432"
+    user = input("Username [postgres]: ").strip() or "postgres"
     password = input("Password: ").strip()
-    
+    dbname = input("Database [poolguard_db]: ").strip() or "poolguard_db"
+
     try:
         port = int(port)
     except ValueError:
         print("❌ Invalid port number!")
-        return
-    
-    print("\n🔄 Connecting to MySQL...")
-    
+        return False
+
+    print("\n🔄 Connecting to PostgreSQL...")
+
+    connection = None
     try:
-        # Connect to MySQL server (without database)
-        connection = mysql.connector.connect(
+        connection = psycopg2.connect(
             host=host,
             port=port,
             user=user,
-            password=password
+            password=password,
+            dbname=dbname,
         )
-        
-        if connection.is_connected():
-            print("✅ Connected to MySQL server")
-            cursor = connection.cursor()
-            
-            # Read and execute schema
-            print("\n🔄 Reading schema.sql...")
-            schema_sql = read_sql_file('database/schema.sql')
-            
-            print("🔄 Executing database schema...")
-            execute_sql_script(cursor, schema_sql)
-            
-            connection.commit()
-            print("\n✅ Database initialized successfully!")
-            print("\n📝 Default Admin Credentials:")
-            print("   Email: creagoouon@gmail.com")
-            print("   Password: admin123")
-            print("\n⚠️  IMPORTANT: Change the default password immediately!")
-            print("\n💾 Update your config.py with these settings:")
-            print(f"   DB_HOST = \"{host}\"")
-            print(f"   DB_PORT = {port}")
-            print(f"   DB_USER = \"{user}\"")
-            print(f"   DB_PASSWORD = \"{password}\"")
-            print(f"   DB_NAME = \"drowning_detection_db\"")
-            
+        connection.autocommit = False
+        print("✅ Connected to PostgreSQL server")
+        cursor = connection.cursor()
+
+        # Read and execute schema
+        schema_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), 'schema.sql'
+        )
+        print("\n🔄 Reading schema.sql...")
+        schema_sql = read_sql_file(schema_path)
+
+        print("🔄 Executing database schema...")
+        execute_sql_script(cursor, connection, schema_sql)
+
+        connection.commit()
+        print("\n✅ Database initialized successfully!")
+        print("\n📝 Default Admin Credentials:")
+        print("   Email: creagoouon@gmail.com")
+        print("   Password: admin123")
+        print("\n⚠️  IMPORTANT: Change the default password immediately!")
+        print(f"\n💾 Connection string:")
+        print(f"   postgresql://{user}:****@{host}:{port}/{dbname}")
+
     except Error as e:
         print(f"\n❌ Database error: {e}")
         return False
-    
+
     finally:
-        if connection and connection.is_connected():
+        if connection:
             cursor.close()
             connection.close()
             print("\n🔌 Database connection closed")
-    
+
     return True
+
 
 if __name__ == "__main__":
     try:
