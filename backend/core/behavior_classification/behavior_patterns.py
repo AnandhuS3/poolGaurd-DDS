@@ -100,24 +100,24 @@ BEHAVIOR_PATTERNS = {
     
     BehaviorType.STRUGGLING: BehaviorPattern(
         behavior_type=BehaviorType.STRUGGLING,
-        min_vertical_angle=45.0,  # More vertical
+        min_vertical_angle=40.0,   # More vertical posture (lowered from 45)
         max_vertical_angle=90.0,
-        min_depth_ratio=0.5,  # Deeper in water
+        min_depth_ratio=0.35,      # Lowered: catch person just fallen into pool (mid-frame)
         max_depth_ratio=1.0,
-        min_thrashing_frequency=0.4,  # Erratic movement
-        max_stillness_duration=20,
-        requires_arms_above=True  # Arms flailing
+        min_thrashing_frequency=0.3,  # Erratic movement (lowered from 0.4)
+        max_stillness_duration=25,
+        # Removed requires_arms_above=True — unreliable from overhead/angled cameras
     ),
     
     BehaviorType.DROWNING: BehaviorPattern(
         behavior_type=BehaviorType.DROWNING,
         min_vertical_angle=30.0,
         max_vertical_angle=90.0,
-        min_depth_ratio=0.6,  # Deep in water
+        min_depth_ratio=0.55,      # Slightly reduced (was 0.6) to detect earlier
         max_depth_ratio=1.0,
-        max_velocity=0.5,  # Minimal movement
-        min_stillness_duration=60,  # Very still
-        requires_face_down=True  # Face-down position
+        max_velocity=1.0,          # Raised slightly (was 0.5) — some movement may still be present
+        min_stillness_duration=45, # Reduced (was 60) — detect drowning sooner
+        # Removed requires_face_down=True — face orientation unreliable from overhead cameras
     )
 }
 

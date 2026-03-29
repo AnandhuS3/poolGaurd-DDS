@@ -515,12 +515,16 @@ class Alert:
             return False
 
     @staticmethod
-    def resolve(alert_id: int) -> bool:
-        """Mark alert as resolved"""
-        query = "UPDATE alerts SET resolved_at = CURRENT_TIMESTAMP WHERE id = %s"
+    def resolve(alert_id: int, user_id: Optional[int] = None) -> bool:
+        """Mark alert as resolved and record the user who did it"""
+        query = """
+            UPDATE alerts
+            SET resolved_at = CURRENT_TIMESTAMP, user_id = %s
+            WHERE id = %s
+        """
         try:
-            db.execute_query(query, (alert_id,), fetch=False)
-            logger.info(f"[DATABASE] Alert {alert_id} resolved")
+            db.execute_query(query, (user_id, alert_id), fetch=False)
+            logger.info(f"[DATABASE] Alert {alert_id} resolved by user {user_id}")
             return True
         except Error as e:
             logger.error(f"[DATABASE] Failed to resolve alert: {e}")

@@ -50,15 +50,18 @@ class BehaviorClassifier:
         if features.streamlined_score > 0.7:
             return BehaviorType.DIVING
         
-        # Check for vertical orientation (potential struggling)
-        if features.vertical_angle > 60:
-            return BehaviorType.STRUGGLING
-        
-        # Check for deep position
-        if features.depth_ratio > 0.7:
+        # Check for drowning: must be deep AND nearly vertical (avoids false alarm
+        # for people standing at the bottom of the camera frame on land which also
+        # yields a high depth_ratio but stay horizontal/walking)
+        if features.depth_ratio > 0.7 and features.vertical_angle > 50:
             return BehaviorType.DROWNING
         
-        # Default to swimming
+        # Check for vertical orientation (potential struggling)
+        # Require they also be at some depth (not just standing upright on land)
+        if features.vertical_angle > 60 and features.depth_ratio > 0.35:
+            return BehaviorType.STRUGGLING
+        
+        # Default to swimming (safe)
         return BehaviorType.SWIMMING
     
     def _classify_temporal(self, features: PoseFeatures, stats: Dict) -> BehaviorType:

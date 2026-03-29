@@ -107,9 +107,13 @@ class StateMachine:
         
         # DANGER state is sticky (requires manual intervention)
         if current_state == PersonState.DANGER:
-            # Only allow downgrade if behavior improves significantly
-            if behavior in [BehaviorType.SWIMMING, BehaviorType.FLOATING]:
-                if person['frames_in_state'] > 30:  # Must improve for 30 frames
+            # Only allow downgrade if behavior improves significantly or they leave the water (UNKNOWN behavior)
+            if behavior in [BehaviorType.SWIMMING, BehaviorType.FLOATING, BehaviorType.UNKNOWN]:
+                # frames_in_state increments per ML evaluation block. With SKIP_FRAMES=5, 10 ticks = 50 frames (~1.6 seconds)
+                if person['frames_in_state'] > 10:
+                    return PersonState.SAFE
+                # After 5 ticks of improvement (~0.8s), go to WARNING
+                elif person['frames_in_state'] > 5: 
                     return PersonState.WARNING
             return PersonState.DANGER
         
@@ -143,24 +147,24 @@ class StateMachine:
         else:
             person['warning_start_frame'] = None
         
-        # Normal behaviors (SWIMMING, DIVING, FLOATING)
-        if behavior in [BehaviorType.SWIMMING, BehaviorType.DIVING, BehaviorType.FLOATING]:
+        # Normal behaviors & out of water (UNKNOWN)
+        if behavior in [BehaviorType.SWIMMING, BehaviorType.DIVING, BehaviorType.FLOATING, BehaviorType.UNKNOWN]:
             # Recovery logic
             if current_state == PersonState.WARNING:
-                # Require sustained normal behavior to recover
-                if person['frames_in_state'] >= 45:  # 1.5 seconds
+                # Require sustained normal behavior to recover (10 ML ticks = ~1.6 seconds)
+                if person['frames_in_state'] >= 10:
                     return PersonState.SAFE
                 return PersonState.WARNING
             
             elif current_state == PersonState.ATTENTION:
-                if person['frames_in_state'] >= 30:  # 1 second
+                if person['frames_in_state'] >= 5:  # 5 ML ticks = ~0.8 seconds
                     return PersonState.SAFE
                 return PersonState.ATTENTION
             
             else:
                 return PersonState.SAFE
         
-        # UNKNOWN behavior - maintain current state
+        # Other unknown logic
         return current_state
     
     def get_state(self, track_id: int) -> PersonState:

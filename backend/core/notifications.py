@@ -26,22 +26,37 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-# Initialize Firebase App using service account, if available
-if FIREBASE_ENABLED and not firebase_admin._apps:
+# ── Lazy Firebase initialization ──────────────────────────────────────────────
+# Do NOT initialize at import time — the .env / SA path may not be loaded yet.
+# Call _ensure_firebase_initialized() right before each FCM send instead.
+
+def _ensure_firebase_initialized() -> bool:
+    """
+    Initialize Firebase using the service account JSON, if not already done.
+    Called lazily so that FIREBASE_SA_PATH is read AFTER the .env has been loaded.
+    Returns True if Firebase is ready to use, False otherwise.
+    """
+    if not FIREBASE_ENABLED:
+        return False
+    if firebase_admin._apps:
+        return True   # Already initialized
     try:
         import os
-        sa_path = os.getenv("FIREBASE_SA_PATH", "")
+        sa_path = os.getenv("FIREBASE_SA_PATH", "").strip()
         if sa_path and os.path.exists(sa_path):
             cred = credentials.Certificate(sa_path)
             firebase_admin.initialize_app(cred)
             logger.info(f"[NOTIFICATION] Firebase initialized with service account: {sa_path}")
+            return True
         else:
-            # Falls back to GOOGLE_APPLICATION_CREDENTIALS env var
-            firebase_admin.initialize_app()
-            logger.info("[NOTIFICATION] Firebase initialized with default application credentials")
+            logger.error(
+                f"[NOTIFICATION] FIREBASE_SA_PATH not found or not set ('{sa_path}'). "
+                "Push notifications disabled."
+            )
+            return False
     except Exception as e:
-        FIREBASE_ENABLED = False
-        logger.warning(f"[NOTIFICATION] Firebase initialization failed — push notifications disabled: {e}")
+        logger.error(f"[NOTIFICATION] Firebase initialization failed: {e}")
+        return False
 
 # Import database models (will be set by initialize_database)
 _db_session = None
@@ -73,8 +88,13 @@ class NotificationService:
         self.config = config
         self.use_database = use_database
         
-        # Track sent notifications to prevent duplicates
-        self.sent_notifications = set()
+        # Track sent notifications to prevent duplicates within a short time window.
+        self._sent_notification_times: dict = {}  # key -> last sent timestamp
+        
+        # Timing windows for alert de-duplication (seconds)
+        self.DEFAULT_WINDOW = 60
+        self.CRITICAL_WINDOW = 2 # DANGER
+        self.STRUGGLING_WINDOW = 5 # STRUGGLING
         
         logger.info(f"[NOTIFICATION] Service initialized: Enabled={self.enabled}, Type={self.notification_type}, DB={use_database}")
     
@@ -97,14 +117,26 @@ class NotificationService:
         if not self.enabled:
             return
         
-        # REMOTE NOTIFICATION - Prevent duplicate alerts
-        notification_key = f"{track_id}_{severity}"
-        if notification_key in self.sent_notifications:
-            logger.debug(f"[NOTIFICATION] Skipping duplicate alert for {notification_key}")
+        # REMOTE NOTIFICATION - Prevent duplicate alerts within a 60-second window.
+        # Using a time-windowed approach so alerts can re-fire across video sessions
+        # rather than being permanently suppressed until the server restarts.
+        notification_key = f"{track_id}_{severity.upper()}"
+        now = datetime.now().timestamp()
+        
+        # Select window based on severity
+        window = self.DEFAULT_WINDOW
+        if severity.upper() == "DANGER":
+            window = self.CRITICAL_WINDOW
+        elif severity.upper() == "STRUGGLING":
+            window = self.STRUGGLING_WINDOW
+            
+        last_sent = self._sent_notification_times.get(notification_key, 0)
+        if now - last_sent < window:
+            logger.debug(f"[NOTIFICATION] Skipping duplicate alert for {notification_key} (last sent {int(now - last_sent)}s ago)")
             return
         
         # Mark as sent immediately to prevent race conditions
-        self.sent_notifications.add(notification_key)
+        self._sent_notification_times[notification_key] = now
         
         # REMOTE NOTIFICATION - Run notification in background (non-blocking)
         asyncio.create_task(self._send_notification_async(track_id, severity, camera_name, notification_key, user_id))
@@ -126,7 +158,7 @@ class NotificationService:
             
             if not recipients:
                 logger.warning(f"[NOTIFICATION] No recipients found for alert (Track #{track_id})")
-                self.sent_notifications.discard(notification_key)
+                self._sent_notification_times.pop(notification_key, None)
                 return
             
             # Create alert record in database
@@ -151,18 +183,17 @@ class NotificationService:
             
             message = self._format_message(track_id, severity, camera_name, timestamp, recipients)
             
-            # Send Email Notifications
+            # ALWAYS fire off Push Notifications (FCM) and Email in the background.
+            # We DO NOT wait for them to finish to avoid blocking the critical path.
+            # This ensures the AI loop continues analyzing without hitches.
+            
+            asyncio.create_task(self._send_push_notification(recipients, track_id, severity, camera_name, alert_id))
+            
             if self.notification_type in ("email", "sms", "whatsapp"):
-                await self._send_email(message, severity, recipients)
-            else:
-                logger.error(f"[NOTIFICATION] Unknown notification type: {self.notification_type}")
-                return
+                # Use to_thread for the blocking SMTP logic
+                asyncio.create_task(self._send_email(message, severity, recipients))
             
-            # ALWAYS attempt to send Push Notifications (FCM) to the mobile client
-            # The mobile app relies entirely on this for triggering alarms.
-            await self._send_push_notification(recipients, track_id, severity, camera_name, alert_id)
-            
-            # Mark notification as sent in database
+            # Mark notification as sent immediately (best effort)
             if alert_id and _db_alert:
                 _db_alert.mark_notification_sent(alert_id, f"{self.notification_type}+fcm")
             
@@ -174,8 +205,8 @@ class NotificationService:
             logger.error(f"[NOTIFICATION] ✗ Failed to send alert: {e}")
             import traceback
             logger.error(traceback.format_exc())
-            # Remove from sent set to allow retry on next detection
-            self.sent_notifications.discard(notification_key)
+            # Remove from tracking to allow retry on next detection
+            self._sent_notification_times.pop(notification_key, None)
     
     async def _get_alert_recipients(self, user_id: Optional[int] = None) -> Optional[Dict]:
         """
@@ -273,6 +304,8 @@ class NotificationService:
         """Format alert message"""
         if severity == "DANGER":
             urgency = "🚨 CRITICAL DROWNING ALERT"
+        elif severity == "STRUGGLING":
+            urgency = "🟠 STRUGGLING - Suspicious behaviour"
         else:
             urgency = "⚠️ WARNING - Potential Distress"
         
@@ -378,8 +411,8 @@ Check camera feed and respond immediately if assistance needed.
             camera_name: Camera name
             alert_id: Database Alert ID
         """
-        if not FIREBASE_ENABLED:
-            logger.warning("[NOTIFICATION] Firebase Admin is not installed or enabled. Skipping push notification.")
+        if not _ensure_firebase_initialized():
+            logger.warning("[NOTIFICATION] Firebase not ready. Skipping push notification.")
             return
 
         try:
@@ -409,14 +442,43 @@ Check camera feed and respond immediately if assistance needed.
             # construct the local notification if it's in the foreground, or use FCM's default if background.
             # But here we will explicitly send a notification payload so iOS/Android display it automatically when in background.
             
-            title = '🚨 DANGER — Possible drowning detected' if severity.upper() == "DANGER" else '⚠️ WARNING — Suspicious behaviour'
+            if severity.upper() == "DANGER":
+                title = '🚨 DANGER — Possible drowning detected'
+            elif severity.upper() == "STRUGGLING":
+                title = '🟠 STRUGGLING — Suspicious behaviour'
+            else:
+                title = '⚠️ WARNING — Potential Distress'
+            
             body = f'Track {track_id} — {camera_name}'
+
+            android_config = messaging.AndroidConfig(
+                priority='high', # Delivers as fast as possible, even in Doze mode
+                notification=messaging.AndroidNotification(
+                    channel_id='dds_critical_alarm' if severity.upper() == "DANGER" else 'dds_alerts',
+                    default_sound=True,
+                    default_vibrate_timings=True,
+                    click_action='FLUTTER_NOTIFICATION_CLICK',
+                    visibility='public' # Show on lock screen
+                )
+            )
+
+            apns_config = messaging.APNSConfig(
+                payload=messaging.APNSPayload(
+                    aps=messaging.Aps(
+                        sound='default',
+                        content_available=True,
+                        mutable_content=True
+                    )
+                )
+            )
 
             message = messaging.MulticastMessage(
                 notification=messaging.Notification(
                     title=title,
                     body=body
                 ),
+                android=android_config,
+                apns=apns_config,
                 data=data_payload,
                 tokens=tokens
             )

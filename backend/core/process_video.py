@@ -281,7 +281,7 @@ async def process_video_realtime(video_path, websocket, external_notification_se
     # CRITICAL: must NOT be module-level; a shared tracker causes track-ID bleed
     # between separate video sessions (person #5 from session A re-appears in session B).
     tracker = DeepSort(
-        max_age=MAX_AGE,
+        max_age=30,  # Lower MAX_AGE to forget stale tracks faster (was MAX_AGE from config, 45-60)
         n_init=N_INIT,
         nms_max_overlap=NMS_MAX_OVERLAP,
         max_cosine_distance=MAX_COSINE_DISTANCE
@@ -315,6 +315,7 @@ async def process_video_realtime(video_path, websocket, external_notification_se
     # Performance monitoring
     process_start_time = time.time()
     processed_frame_count = 0
+    sent_frame_count = 0  # Track only frames actually sent to client (for pacing)
     last_fps_update = time.time()
     processing_fps = 0.0
     
@@ -352,7 +353,10 @@ async def process_video_realtime(video_path, websocket, external_notification_se
             
             # Motion detection - skip processing if minimal motion
             skip_ml_processing = False
-            if USE_MOTION_DETECTION:
+            # Never skip if there is an active alert!
+            has_active_alert = any(p.get("state") in ["WARNING", "DANGER"] for p in person_data.values())
+            
+            if USE_MOTION_DETECTION and not has_active_alert:
                 gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                 
                 if prev_gray is not None:
@@ -372,14 +376,21 @@ async def process_video_realtime(video_path, websocket, external_notification_se
             
             # Run ML detection only if motion detected or required
             if not skip_ml_processing:
-                # Offload heavy ML inference to background threads to prevent FastAPI event loop blocking
-                # YOLO detection with ensemble (if secondary model available)
-                results = await asyncio.to_thread(model, frame, conf=CONFIDENCE_THRESHOLD, verbose=False)
+                # Parallelize ML inference to prevent sequential blocking
+                # Using asyncio.gather to run both models concurrently if ensemble is enabled
+                tasks = [
+                    asyncio.to_thread(model, frame, conf=CONFIDENCE_THRESHOLD, imgsz=YOLO_IMG_SIZE, verbose=False)
+                ]
                 
-                # Run secondary model for ensemble detection
-                results_secondary = None
                 if model_secondary:
-                    results_secondary = await asyncio.to_thread(model_secondary, frame, conf=CONFIDENCE_THRESHOLD, verbose=False)
+                    tasks.append(
+                        asyncio.to_thread(model_secondary, frame, conf=CONFIDENCE_THRESHOLD, imgsz=YOLO_IMG_SIZE, verbose=False)
+                    )
+                
+                # Wait for all detection tasks to complete
+                all_results = await asyncio.gather(*tasks)
+                results = all_results[0]
+                results_secondary = all_results[1] if len(all_results) > 1 else None
 
                 # Prepare detections for DeepSORT
                 detections = []
@@ -392,7 +403,7 @@ async def process_video_realtime(video_path, websocket, external_notification_se
                         cls = int(box.cls[0])
                         detections.append(([x1, y1, x2 - x1, y2 - y1], conf, cls))
                 
-                # Add secondary model detections (ensemble approach)
+                # Add secondary model detections
                 if results_secondary:
                     for result in results_secondary:
                         for box in result.boxes:
@@ -401,7 +412,35 @@ async def process_video_realtime(video_path, websocket, external_notification_se
                             cls = int(box.cls[0])
                             # Boost ensemble confidence slightly; cap at 1.0
                             detections.append(([x1, y1, x2 - x1, y2 - y1], min(conf * 1.1, 1.0), cls))
-                
+
+                # ============================================================
+                # ENSEMBLE NMS (Deduplication)
+                # ============================================================
+                # Remove duplicate detections when both models find the same person
+                if len(detections) > 1:
+                    # boxes must be [x, y, w, h] which is already our format
+                    boxes = [d[0] for d in detections]
+                    scores = [d[1] for d in detections]
+                    
+                    # Run NMS to merge overlapping boxes from multiple models
+                    # Use a slightly stricter threshold to ensure clean tracks
+                    indices = cv2.dnn.NMSBoxes(
+                        bboxes=boxes, 
+                        scores=scores, 
+                        score_threshold=CONFIDENCE_THRESHOLD, 
+                        nms_threshold=NMS_MAX_OVERLAP
+                    )
+                    
+                    if len(indices) > 0:
+                        # Flatten indices into a list of integers
+                        if isinstance(indices, np.ndarray):
+                            indices = indices.flatten().tolist()
+                        elif isinstance(indices, (list, tuple)) and len(indices) > 0 and isinstance(indices[0], (list, np.ndarray)):
+                             indices = [i[0] for i in indices]
+                             
+                        detections = [detections[i] for i in indices]
+                        logger.debug(f"[DETECTION] NMS reduced {len(boxes)} detections to {len(detections)}")
+
                 # Cache detections for motion-based reuse
                 last_detections = detections.copy()
             else:
@@ -564,14 +603,26 @@ async def process_video_realtime(video_path, websocket, external_notification_se
                 
                 # Fallback to heuristic detection
                 elif FALLBACK_TO_HEURISTIC:
-                    # Legacy position-based drowning detection
+                    # Legacy position-based drowning detection.
+                    # Use bottom-center of bbox to estimate if person is IN water vs standing on deck.
+                    # Guards against false positives for people standing at the bottom of the frame:
+                    # - Require position_ratio > 0.75 (not just > 0.6) for WARNING
+                    # - Also check box aspect ratio: a person IN water tends to be more compact
+                    #   (partial body visible), while a standing person is taller than wide.
                     person_bottom = y2
                     position_ratio = person_bottom / height
+                    box_height = y2 - y1
+                    box_width = x2 - x1
+                    aspect_ratio = box_height / max(box_width, 1)  # tall = standing, squat = in water
                     
-                    if position_ratio > 0.6:
+                    # Tighter threshold to avoid land false positives:
+                    # High position_ratio + compact aspect ratio → likely person in/near water
+                    in_water_zone = position_ratio > 0.75 or (position_ratio > 0.6 and aspect_ratio < 1.8)
+                    
+                    if in_water_zone:
                         person_data[track_id]["frames_underwater"] += 1
                     else:
-                        # Decrement counter when in safe position
+                        # Decrement counter when in safe position (standing on land)
                         person_data[track_id]["frames_underwater"] = max(0, person_data[track_id]["frames_underwater"] - 2)
                     
                     # State transitions based on frames_underwater
@@ -582,6 +633,8 @@ async def process_video_realtime(video_path, websocket, external_notification_se
                         if current_state != "DANGER":
                             person_data[track_id]["state"] = "DANGER"
                             person_data[track_id]["danger_start_frame"] = frame_count
+                            # Reset alert sent flags so alerts can re-trigger if they recover and drown again
+                            person_data[track_id]["alert_sent"] = False 
                             logger.critical(f"[HEURISTIC] Person #{track_id}: {current_state} → DANGER (underwater {frames_underwater} frames)")
                     
                     elif frames_underwater >= warning_threshold_frames:
@@ -595,15 +648,20 @@ async def process_video_realtime(video_path, websocket, external_notification_se
                             pass
                     
                     else:
-                        # SAFE state (only if not in DANGER)
+                        # SAFE state (recovery)
                         if current_state == "WARNING":
                             person_data[track_id]["state"] = "SAFE"
                             person_data[track_id]["warning_start_frame"] = None
                             logger.info(f"[HEURISTIC] Person #{track_id}: WARNING → SAFE (recovered)")
+                        elif current_state == "DANGER" and frames_underwater == 0:
+                            # Allow recovery from DANGER if they are completely out of the danger zone
+                            person_data[track_id]["state"] = "SAFE"
+                            person_data[track_id]["danger_start_frame"] = None
+                            person_data[track_id]["warning_start_frame"] = None
+                            logger.info(f"[HEURISTIC] Person #{track_id}: DANGER → SAFE (rescued/recovered)")
                         elif current_state == "SAFE":
                             # Already safe
                             pass
-                        # DANGER state is sticky - no auto-recovery
                 
                 # ============================================================
                 # END DUAL-MODE DETECTION
@@ -651,14 +709,27 @@ async def process_video_realtime(video_path, websocket, external_notification_se
                     logger.info(f"[STATE CHANGE] Person #{track_id}: {previous_state} → {new_state}")
                     
                     # REMOTE NOTIFICATION - Trigger external notification
-                    if new_state in ["WARNING", "DANGER"]:
+                    # We trigger alerts for WARNING, DANGER, and also ATTENTION if behavior is struggling
+                    is_struggling = person_data[track_id].get("behavior") == "struggling"
+                    alert_severity = None
+                    
+                    if new_state == "DANGER":
+                        alert_severity = "DANGER"
+                    elif new_state == "WARNING":
+                        alert_severity = "WARNING"
+                        # If they are currently struggling, upgrade the notification label
+                        if is_struggling:
+                            alert_severity = "STRUGGLING"
+                    elif new_state == "ATTENTION" and is_struggling:
+                        alert_severity = "STRUGGLING"
+                    
+                    if alert_severity:
                         should_notify = False
                         
-                        if new_state == "WARNING" and not person_data[track_id].get("warning_alert_sent", False):
-                            person_data[track_id]["warning_alert_sent"] = True
-                            should_notify = True
-                        elif new_state == "DANGER" and not person_data[track_id]["alert_sent"]:
-                            person_data[track_id]["alert_sent"] = True
+                        # Use specific tracking flags for each severity to prevent spam
+                        sent_flag = f"{alert_severity.lower()}_alert_sent"
+                        if not person_data[track_id].get(sent_flag, False):
+                            person_data[track_id][sent_flag] = True
                             should_notify = True
                         
                         if should_notify:
@@ -668,14 +739,13 @@ async def process_video_realtime(video_path, websocket, external_notification_se
                             if active_svc:
                                 await active_svc.send_alert(
                                     track_id=track_id,
-                                    severity=new_state,
+                                    severity=alert_severity,
                                     camera_name=CAMERA_NAME
                                 )
                             else:
                                 logger.warning(
                                     f"[NOTIFICATION] No notification service available — "
-                                    f"alert for Person #{track_id} ({new_state}) NOT sent. "
-                                    "Check SMTP credentials in .env and NOTIFICATION_ENABLED in config.py."
+                                    f"alert for Person #{track_id} ({alert_severity}) NOT sent. "
                                 )
                 
                 # NOTE: Bounding boxes and labels are drawn by the frontend canvas overlay.
@@ -721,6 +791,7 @@ async def process_video_realtime(video_path, websocket, external_notification_se
             
             # Update performance metrics
             processed_frame_count += 1
+            sent_frame_count += 1
             current_time = time.time()
             if current_time - last_fps_update >= 1.0:
                 processing_fps = processed_frame_count / (current_time - process_start_time)
@@ -750,13 +821,17 @@ async def process_video_realtime(video_path, websocket, external_notification_se
             })
             
             # ── Real-time pacing ────────────────────────────────────────────
-            # Sleep just enough so that frames reach the client at the video's
-            # native FPS. Without this, the backend blasts all frames instantly,
-            # which fills the browser's network buffer and causes severe lag.
+            # Throttle frame delivery so the client receives frames at the video's
+            # native FPS.  Only SENT frames count for pacing — skipped frames
+            # must not inflate the expected timestamp.
+            #
+            # effective_fps = how many frames per second actually reach the client
+            # = (video FPS) / frame_skip
+            effective_fps = fps / max(frame_skip, 1)
             elapsed = time.time() - frame_start_time
-            expected = frame_count / fps  # wall-clock seconds at which this frame should arrive
+            expected = sent_frame_count / effective_fps  # wall-clock seconds for this sent frame
             pace_sleep = expected - elapsed
-            if pace_sleep > 0:
+            if pace_sleep > 0.002:  # avoid very short sleeps that waste syscalls
                 await asyncio.sleep(pace_sleep)
 
             # Log every 30 frames

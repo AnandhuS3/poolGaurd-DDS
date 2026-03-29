@@ -12,7 +12,7 @@ EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
 DO $$ BEGIN
-    CREATE TYPE alert_type_enum AS ENUM ('warning', 'danger');
+    CREATE TYPE alert_type_enum AS ENUM ('warning', 'danger', 'struggling');
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 

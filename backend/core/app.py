@@ -56,6 +56,13 @@ ws_logger = loggers['websocket']
 
 app = FastAPI(title="Drowning Detection System")
 
+
+@app.get("/api/ping")
+async def ping():
+    """Lightweight health-check used by the mobile app for server auto-discovery.
+    No authentication required — returns instantly."""
+    return {"status": "ok", "service": "poolguard"}
+
 @app.exception_handler(RuntimeError)
 async def runtime_error_handler(request: Request, exc: RuntimeError):
     """Return 503 when the database pool is not available (e.g. database down at startup)"""
@@ -582,7 +589,8 @@ async def get_active_alerts(
             "confidence":   None,
             "camera_id":    row["camera_id"] or "main",
             "timestamp":    row["timestamp"].isoformat() if row.get("timestamp") else None,
-            "acknowledged": False,
+            "acknowledged": row.get("resolved_at") is not None,
+            "resolved_at":  row["resolved_at"].isoformat() if row.get("resolved_at") else None,
         })
     return result
 
@@ -593,7 +601,7 @@ async def acknowledge_alert(
     current_user: dict = Depends(require_guard_or_admin)
 ):
     """Resolve an alert (set resolved_at). Used by the mobile guard client."""
-    resolved = Alert.resolve(alert_id)
+    resolved = Alert.resolve(alert_id, user_id=current_user["id"])
     if not resolved:
         raise HTTPException(status_code=404, detail=f"Alert {alert_id} not found or already resolved.")
     AuditLog.log(
