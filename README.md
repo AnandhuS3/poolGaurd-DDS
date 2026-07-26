@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="frontend/public/assets/icon.svg" alt="PoolGuard Icon" width="100" height="100" />
+  <img src="frontend/public/assets/icon.png" alt="PoolGuard Icon" width="100" height="100" />
 </p>
 
 # PoolGuard
